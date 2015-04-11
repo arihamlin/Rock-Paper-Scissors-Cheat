@@ -9,7 +9,6 @@ class BaseStructure(object):
 
     def __init__(self, **kwargs):
         self.data = dict()
-        assert self.keys
 
         for k,v in kwargs.iteritems():
             assert k in self.keys
@@ -82,6 +81,34 @@ class SignedStructure(object):
 class Payment(BaseStructure):
     name = "Payment"
     keys = ["from_account", "to_account", "amount"]
+
+
+class InitiateEncounter(BaseStructure):
+    name = "InitiateEncounter"
+    keys = ["challenger", "defender", "begin_by", "end_by",
+            "begin_at"]
+
+
+class AccountState(BaseStructure):
+    name = "AccountState"
+    keys = ["account", "encounter_begin_at", "encounter_end_by",
+            "in_encounter_with", "partial_chain_length",
+            "stake", "balance"]
+
+
+class Commitment(BaseStructure):
+    name = "Commitment"
+    keys = ["prev", "value"]
+
+
+class Resolution(BaseStructure):
+    name = "Resolution"
+    keys = ["prev"]
+
+
+class CloseEncounter(BaseStructure):
+    name = "CloseEncounter"
+    keys = ["challenger", "defender", "moves"]
 
 
 if __name__ == "__main__":
