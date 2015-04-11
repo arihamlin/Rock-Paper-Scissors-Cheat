@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import json
 import hashlib
+import os
 
 
 KEY_SIZE = 2048
@@ -93,6 +94,33 @@ class SignedStructure(object):
         return SignedStructure(payload, obj["signature"])
 
 
+class Commitment(BaseStructure):
+    name = "Commitment"
+    keys = ["input", "hash"]
+    secret = None
+
+    def computeCommitment(self, input, secret):
+        assert secret is not None
+        return hashlib.sha256(input + secret).hexdigest()
+
+    def getSecret(self):
+        return self.secret
+
+    def serialize(self):
+        if "hash" not in self.data:
+            self.secret = os.urandom(20)
+            self.data["hash"] = computeCommitment(self.data["input"], self.secret)
+        return BaseStructure.serialize(self)
+
+    @classmethod
+    def deserialize(cls, bytes):
+        obj = BaseStructure.deserialize(cls, bytes)
+
+    def verifyCommitment(self, secret):
+        assert "hash" in self.data
+        return self.data["hash"] == computeCommitment(self.data["input"], self.secret)
+
+
 class Payment(BaseStructure):
     name = "Payment"
     keys = ["from_account", "to_account", "amount"]
@@ -103,11 +131,11 @@ class InitiateEncounter(BaseStructure):
     keys = ["challenger", "defender", "begin_by", "end_by",
             "begin_at"]
 
-class PostInitiateEncoutner(BaseStructure):
+class PostInitiateEncounter(BaseStructure):
     name = "PostInitiateEncounter"
     keys = ["challenger", "defender", "begin_by", "end_by",
             "begin_at", "challenger_sign"]
-    
+
 class QueryState(BaseStructure):
     name = "QueryState"
     keys = ["account"]
