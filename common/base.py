@@ -1,0 +1,101 @@
+#!/usr/bin/env python
+import json
+import hashlib
+
+
+class BaseStructure(object):
+    name = "BaseStructure"
+    keys = list()
+
+    def __init__(self, **kwargs):
+        self.data = dict()
+        assert self.keys
+
+        for k,v in kwargs.iteritems():
+            assert k in self.keys
+            self.data[k] = v
+
+    def validate(self):
+        for k in self.keys:
+            assert k in self.keys
+        return True
+
+    def serialize(self):
+        assert self.validate()
+        return json.dumps(self.data, sort_keys=True)
+
+    @classmethod
+    def deserialize(cls, bytes):
+        obj = json.loads(bytes)
+        return cls(**obj)
+
+    def hash(self):
+        return hashlib.sha256(self.serialize()).hexdigest()
+
+    def verifyHash(self, h):
+        return h == self.hash()
+
+    def __eq__(self, other):
+        if self.name != other.name:
+            return False
+        for k in self.keys:
+            if self.data.get(k) != other.data.get(k):
+                return False
+        return True
+
+
+class SignedStructure(object):
+    def __init__(self, payload, signature=None):
+        assert payload
+        self.payload = payload
+        self.signature = signature
+
+    def sign(self, privkey):
+        self.signature = privkey.sign(self.payload.hash(), 0)
+        return self.signature
+
+    def verifySignature(self, pubkey, sig=None):
+        sig = sig or self.signature
+        return pubkey.verify(self.payload.hash(), sig)
+
+    def serialize(self):
+        assert self.signature is not None
+        return json.dumps({
+                "payload": self.payload.serialize(),
+                "signature": self.signature,
+                "name": self.payload.name
+            }, sort_keys=True)
+
+    @classmethod
+    def deserialize(self, bytes, pubkey=None):  # verifies signature
+        obj = json.loads(bytes)
+        assert "name" in obj
+        assert "payload" in obj
+        assert "signature" in obj
+
+        # hack: find Structure class by name
+        cls = globals()[obj["name"]]
+        payload = cls.deserialize(obj["payload"])
+        return SignedStructure(payload, obj["signature"])
+
+
+class Payment(BaseStructure):
+    name = "Payment"
+    keys = ["from_account", "to_account", "amount"]
+
+
+if __name__ == "__main__":
+    import os
+    import Crypto.PublicKey.RSA as RSA
+
+    key = RSA.generate(1024, os.urandom)
+
+    payment = Payment(from_account="from_account", to_account="to_account", amount=10)
+    s = SignedStructure(payment)
+    s.sign(key)
+
+    serialized = s.serialize()
+    deserialized = SignedStructure.deserialize(serialized)
+    assert deserialized.verifySignature(key.publickey())
+    assert payment == deserialized.payload
+
