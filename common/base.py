@@ -2,6 +2,7 @@
 import json
 import hashlib
 import os
+import Crypto.PublicKey.RSA as RSA
 
 
 KEY_SIZE = 2048
@@ -47,37 +48,73 @@ class BaseStructure(object):
         return True
 
 
-# class RSAPublicKey(BaseStructure):
-#     name = "RSAPublicKey"
-#     keys = ["n", "e"]
+class AccountIdentity(BaseStructure):
+    name = "AccountIdentity"
+    keys = ["account_id", "public_key"]
 
+    def __init__(self, account_id=None, key=None, public_key=None):
+        self.account_id = account_id
+        if public_key:
+            self.public_key = self.decodePublicKey(public_key)
+        else:
+            self.public_key = key.publickey()
+        self.key = key
 
-# class AccountIdentity(object):
-#     @classmethod
-#     def createFromPublicKey()
+        if self.account_id is None and self.public_key is not None:
+            self.account_id = AccountIdentity.findAccountName(self.public_key)
+
+        BaseStructure.__init__(self, account_id=self.account_id,
+            public_key=self.encodePublicKey(self.public_key))
+
+    def decodePublicKey(self, encoded):
+        return RSA.importKey(encoded.decode("base64"))
+
+    def encodePublicKey(self, public_key):
+        return public_key.exportKey(format="DER").encode("base64").strip()
+
+    @classmethod
+    def findAccountName(cls, public_key):
+        return hashlib.sha1(public_key.exportKey(format="DER")).hexdigest()
+
+    def hasPrivateKey(self):
+        return self.key.has_private()
+
+    def sign(self, M):
+        return self.key.sign(M, 0)
+
+    def verifySignature(self, M, sig):
+        if self.account_id != AccountIdentity.findAccountName(self.public_key):
+            return False
+        return self.public_key.verify(M, sig)
+
+    def __repr__(self):
+        return "Account<%s>" % self.account_id
 
 
 class SignedStructure(object):
-    def __init__(self, payload, signature=None, key=None):
+    def __init__(self, payload, account=None, signature=None, key=None):
         assert payload
+        self.account = account
         self.payload = payload
         self.signature = signature
         self.pubkey = key
 
-    def sign(self, key):
-        self.signature = key.sign(self.payload.hash(), 0)
-        self.pubkey = key.publickey()
+    def sign(self, account):
+        self.account = account
+        self.signature = account.sign(self.payload.hash())
         return self.signature
 
-    def verifySignature(self, pubkey, sig=None):
-        sig = sig or self.signature
-        return pubkey.verify(self.payload.hash(), sig)
+    def verifySignature(self, account_id):
+        if account_id != self.account.account_id:
+            return False
+        return self.account.verifySignature(self.payload.hash(), self.signature)
 
     def serialize(self):
         assert self.signature is not None
         return json.dumps({
                 "payload": self.payload.serialize(),
                 "signature": self.signature,
+                "account": self.account.serialize(),
                 "name": self.payload.name
             }, sort_keys=True)
 
@@ -87,11 +124,13 @@ class SignedStructure(object):
         assert "name" in obj
         assert "payload" in obj
         assert "signature" in obj
+        assert "account" in obj
 
         # hack: find Structure class by name
         cls = globals()[obj["name"]]
         payload = cls.deserialize(obj["payload"])
-        return SignedStructure(payload, obj["signature"])
+        account = AccountIdentity.deserialize(obj["account"])
+        return SignedStructure(payload, signature=obj["signature"], account=account)
 
 
 class Commitment(BaseStructure):
@@ -163,16 +202,18 @@ class CloseEncounter(BaseStructure):
 
 if __name__ == "__main__":
     import os
-    import Crypto.PublicKey.RSA as RSA
 
     key = RSA.generate(KEY_SIZE, os.urandom)
+    account = AccountIdentity(key=key)
+    print account
 
-    payment = Payment(from_account="from_account", to_account="to_account", amount=10)
+    payment = Payment(from_account=account.account_id,
+        to_account="to_account", amount=10)
     s = SignedStructure(payment)
-    s.sign(key)
+    s.sign(account)
 
     serialized = s.serialize()
     deserialized = SignedStructure.deserialize(serialized)
-    assert deserialized.verifySignature(key.publickey())
+    assert deserialized.verifySignature(account.account_id)
     assert payment == deserialized.payload
 
