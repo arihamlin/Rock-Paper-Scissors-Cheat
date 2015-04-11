@@ -6,6 +6,9 @@ Author: ATLH, 4/6/15
 
 from enum import IntEnum
 import random
+import socket
+import threading
+import SocketServer
 from client_comm import PlayerConnRequestHandler, PlayerServer, Request
 from client_crypto import PlayerCrypto
 
@@ -24,12 +27,12 @@ class Player(object):
         
         self.crypto_object = crypto_object 
         #initialize the server
-        self.server = ThreadedTCPServer((server_ip, server_port),
+        self.server = PlayerServer((server_ip, server_port),
                                         crypto_object)
 
         # Start a thread with the server -- that thread will then start one
         # more thread for each request
-        self.server_thread = threading.Thread(target=server.serve_forever)
+        self.server_thread = threading.Thread(target=self.server.serve_forever)
         # Exit the server thread when the main thread terminates
         self.server_thread.daemon = True
         self.server_thread.start()
@@ -38,7 +41,7 @@ class Player(object):
         """
         Call when done playing before Player goes out of scope
         """
-        self.server.shut_down()
+        self.server.shutdown()
         
     def start_encounter(self, player_ip, player_port):
         """
@@ -47,13 +50,24 @@ class Player(object):
         player_port - Port of the other player 
         """
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((player_ip, player_oort))
-        sock.sendall("#".join([Request.INIT,
-                               random.randint(0,100000),
+        sock.connect((player_ip, player_port))
+        #need to update to challenger, defender, begin_by, end_by = payload
+        #get these values for begin_by and end_by by querying server for 
+        #current ledger number and then do math
+        #
+        sock.sendall("#".join([str(Request.INIT),
+                               #this is the ledger that the encounter was initiated at 
+                               str(random.randint(0,100000)),
+                               #this needs to change to the two player identities and the 
+                               #ledger it is good until 
                                self.crypto_object.sign('Play Game?')]))
 
-    def verify_ledger_state(self):
+    def get_ledger_state(self):
         """
+        get current ledger state, take state which most voters agree on. 
+        
+        
+        
         Needs to check ledger and make sure all moves are verified
         Will probably need to add some sort of game state to the
         player object where it grabs things when started, 
