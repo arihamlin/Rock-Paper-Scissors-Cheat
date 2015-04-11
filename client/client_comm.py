@@ -4,16 +4,6 @@ Purpose: Contains the logic for client communication with
 other clients and the server 
 Author: ATLH, 4/6/15
 """
-"""
-NOTES OF TODO:
-1) need to figure out how communication with the server is going to look like -
-this seems to make sense that it is HTTP post and get this only really comes into
-the posting of end, and verifying - this needs to be done and also 
-handling who wins (this is going to be handled by manu)
-2) need to expand have checking to make sure encounter id matches current encounter
-3) need to only allow one game played at a time (don't want it threaded) 
-4) 
-"""
 
 import socket
 import SocketServer
@@ -30,19 +20,29 @@ class Request(IntEnum):
            if accepts, sends commitment and initializes encounter
            with the server - they also have to define the
            encounter begins at
-    D_COMMIT - Defender player has acknowledge request, the
-            returns their commitment, they have also have to 
-            check with the server state that defender posted
-            game before continuing.  
-    C_COMMIT - Challengers turn commitment
-    D_REVEAL - Reveal of the Defender's turn 
-    C_REVEAL - Reveal of the Challenger's turn
-    RESOLVE - Sent by the defender after three encounters 
-             indicates that they have posted results to 
-             server and challenger should do the same 
+    D_COMMIT - Defender player has acknowledge request and returned
+               their commitment, challenger have also have to 
+               check with the server state that defender posted
+               game before continuing and responding with their 
+               commitment 
+    C_COMMIT - Defender recieves challengers commitment, they
+               respond with revealing their turn
+    D_REVEAL - Challenger recieves the defenders reveal, and verify
+               the commitment they respond with revealing their own turn. 
+    C_REVEAL - Defender recieves challengers reveal, and verify the 
+               commitment. There are two possiblities at this point:
+               1) if have not had three enounters yet they send
+               another commitment to the challenger. 
+               2) if they have had three they then send a resolve
+                to the challanger and post a record of the moves
+                to the voters
+    RESOLVE - Sent by the defender after three encounters to
+              the challenger. Challenger then checks to see
+              if the defender has posted the correct things
+              to the voters. 
     """
     INIT = 1 
-    D_COMMIT = 2 
+    D_COMMIT = 2
     C_COMMIT = 3 
     D_REVEAL = 4
     C_REVEAL = 5
@@ -55,11 +55,11 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
 
     def handle(self):
         #initialize encounter variables 
-        self 
+        self.moves = []
         self.socket_file = self.request.makefile()
         num_transactions = 0
         
-        while num_transactions < 7 #or timeout:
+        while num_transactions < 13 #TODO - or timeout:
             num_transactions += 1 
             data = self.socket_file.readline().strip()
             req = data.split('#')[0]        
@@ -68,28 +68,22 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
             transaction = SignedStructure.deserialize(payload)
             #TODO Verify signature on transaction
             
-            #case where another player wants to start encounter
             if req == Request.INIT:            
                 self.initialize_encounter(transaction)
-            #responding to defenders commitment
             elif req == Request.D_COMMIT:
                 self.defender_commit(transaction)
-            #responding to challenger's commitment
             elif req == Request.C_COMMIT:
-                self.challenger_commitment(transaction)
-            #responding to defenders reveal
+                self.challenger_commit(transaction)
             elif req == Request.D_REVEAL:
                 self.defender_reveal(transaction)
-            #responding to challeners reveal
             elif req == Request.C_REVEAL:
                 self.challenger_reveal(transaction)
-            #resolving the game 
             elif req == Request.RESOLVE:
                 self.resolve_game(transaction)
             else:
                 continue
             
-    def get_player_input(self, prompt): 
+    def _get_player_input(self, prompt): 
         """
         Arguments:
         prompt - the prompt for the user 
@@ -106,15 +100,40 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         input_thread.daemon = True
         input_thread.start()
         
-        #wait for user_input to get set - may want to time this out...
+        #wait for user_input to get set - TODO: may want to time this out...
         while user_input[0] == None:
             continue   
         
         return user_input[0]
     
+    def _commit_turn(self, prev):
+        #Get player input for turn
+        self.turn = self._get_player_input("What would you like to play - Rock(R), Paper(P), Scissors(S) ")
+    
+        #sanitize user input
+        if self.turn not in ['R','P','S']:
+            #TODO: In the future lets randomize this 
+            print "Option not understood, choosing Rock."
+            self.turn = 'R'
+        
+        #Commit to turn and send that to challenger
+        commitment = b.CommitStructure(self.turn)
+        commitment.commit()
+        commt_transaction = b.SignedStructure(b.CommitTransaction(prev=prev, 
+                                                                  commitment=commitment.serialize()))
+        commit_transaction.sign(self._PlayerServer.key)
+        self.moves.append(commit_transaction)
+        return commit_transaction
+    
+    def _reveal_turn(self, prev):
+        reveal_transaction = b.SignedStructure(b.RevealTransaction(prev=prev,
+                                                                   value=self.turn))
+        reveal_transaction.sign(self._PlayerServer.key)
+        self.moves.append(reveal_transaction)
+        return reveal_transaction
+    
     def initialize_encouter(self, transaction): 
- 
-        assert type(transaction.payload) == b.InitiateEncounter
+        assert transaction.payload.name == "InitiateEncounter"
         
         play_game = self.get_player_input("Play a game (Y/N): ")
         
@@ -130,169 +149,68 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         #TODO: query server and get encounter start at
         encounter_start_at = 0
         
-        #Get player input for turn
-        turn = self.get_player_input("What would you like to play - Rock(R), Paper(P), Scissors(S) ")
+        #get player turn and get the commitment 
+        commit_transaction = self._commit_turn(encounter_start_at)
+        self.request.send("#".join([Request.D_COMMIT,commit_transaction.serialize()]))
+        
+    def defender_commit(self, transaction):
+        assert transaction.payload.name =="CommitTransaction"
+        
+        #check to see if defender has posted to voters yet    
+        #TODO - check to see if defender has posted to voters
+        has_init = True
+        
+        #get player turn and get the commitment
+        commit_transaction = self._commit_turn(transaction.signature)
+        self.request.send("#".join([Request.C_COMMIT,commit_transaction.serialize()]))
+        
+    def challenger_commit(self, transaction):
+        assert transaction.payload.name == "CommitTransaction"
+        
+        #construct reveal transaction object for defender
+        reveal_transaction = self._reveal_turn(transaction.signature)
+        self.request.send("#".join([Request.D_REVEAL,reveal_transaction.serialize()]))
+        
+    def defender_reveal(self, transaction):
+        assert transaction.payload.name == 'RevealTransaction'
+        
+        #check that the commitment is valid
+        #TODO: check commitment value
+        
+        #construct reveal transaction object for challenger
+        reveal_transaction = self._reveal_turn(transaction.signature)
+        self.request.send("#".join([Request.D_REVEAL,reveal_transaction.serialize()]))
     
-        #sanitize user input
-        if turn not in ['R','P','S']:
-            #TODO: In the future lets randomize this 
-            print "Option not understood, choosing Rock."
-            user_input[0] = 'R'
+    def challenger_reveal(self, transaction):
+        assert transaction.payload.name == 'RevealTransaction'
         
-        #Commit to turn and send that to challenger
+        #check that the commitment is valie
+        #TODO check commitment value
         
-    def start_encounter(self, payload):
-        ##2
-        #figure out if game is going forward
-        try:
-            encounter_id, play_game, signed_game, sigma1 = payload
-        except:
-            raise CommunicationException("Payload not properly formatted")
+        #send resolution
+        resolve_transaction = b.SignedStructure(b.ResolveTransaction(prev=transaction.signature))
+        resolve_transaction.sign(self._PlayerServer.key)
+        self.moves.append(resolve_transaction)
+        self.request.send('#'.join([Request.RESOLVE,resolve_transaction.serialize()]))
         
-        #verify_signature on transaction
-        message = "#".join([Request.ACK_INIT,
-                            encounter_id,
-                            play_game,
-                            signed_game])
-        if not self._PlayerServer.crypto.verify(message, sigma1) and\
-           not self._PlayerServer.crypto.verify('Play Game?',signed_game):
-            print "Did not come from valid player, terminating"
-            return 
+        #post to the server to close the encounter 
+        #TODO post to server to close encounter
         
-        #doesn't want to play a game...:( 
-        if play_game != 'Y':
-            return 
+    def resolve_game(self, transaction):
+        assert transaction.payload.name == "ResolveTransaction"
         
-        # Declare a mutable object so that it can be pass via reference
-        user_input = [None]
-
-        # spawn a new thread to wait for input 
-        def get_user_input(user_input_ref):
-            user_input_ref[0] = raw_input("What would you like to play - Rock(R), Paper(P), Scissors(S) ")
-
-        input_thread = threading.Thread(target=get_user_input, args=(user_input,))
-        input_thread.daemon = True
-        input_thread.start()
-        
-        #wait for user_input to get set = may want to time this out...
-        while user_input[0] == None:
-            continue
-        
-        #sanitize user input
-        if user_input[0] not in ['R','P','S']:
-            #TODO: In the future lets randomize this 
-            print "Option not understood, choosing Rock."
-            user_input[0] = 'R'
-        
-        #calculate commitment
-        self.game_transaction['my_turn'] = user_input[0]
-        self.game_transaction['my_turn_commitment'] = \
-                    self._PlayerServer.crypto.commit(self.current_move)   
-        self.game_transaction['sigma1'] = sigma1 
-        self.game_transaction['signed_init'] = signed_game
-        
-        #calculate sigma2
-        message = "#".join([Request.COMMIT,
-                            self.game_transaction['encounter_id'],
-                            self.game_transaction['my_turn_commitment'],
-                            self.game_transaction['sigma1']])
-        self.game_transaction['sigma2'] = self._PlayerServer.crypto.sign(message)
-        
-        #send the commitment
-        self.request.send("#".join([message,self.game_transcript['sigma2']]))
-        
-    def reveal_commitment(self, payload):
-        ##3
-        #extract their commitment
-        try:
-            encounter_id, their_commit, sigma1, sigma2 = payload
-        except:
-            raise CommunicationException("Payload not properly formatted")
-        
-        #verify_signature on transaction
-        message = "#".join([Request.COMMIT,
-                            encounter_id,
-                            their_commit,
-                            sigma1])
-        if not self._PlayerServer.crypto.verify(message, sigma2):
-            print "Did not come from valid player, terminating"
-            return
-        
-        #sign reveal and send 
-        request = '#'.join([Request.REVEAL,
-                            self.game_transaction['encounter_id'],
-                            self.game_transaction['my_turn'],
-                            self.game_transaction['sigma2']])
-        self.game_transaction['sigma3'] = self._PlayerServer.crypto.sign(request)
-        self.request.send('#'.join([request,self.game_transaction['sigma3']]))
-        
-    def reveal_second_commit(self, payload):
-        ##4
-        #extract their turn 
-        try:
-            encounter_id, their_turn, sigma2, sigma3 = payload
-        except:
-            raise CommunicationException("Payload not properly formatted")
-        
-        message = "#".join([Request.COMMIT,
-                            encounter_id,
-                            their_turn,
-                            sigma2])
-        if not self._PlayerServer.crypto.verify(message, sigma3):
-            print "Did not come from valid player, terminating"
-            return
-        
-        self.game_transaction['their_turn'] = their_turn
-        #verify their commitment
-        if self._PlayerServer.crypto.reveal_correct(
-                            self.game_transaction['their_turn_commitment'],
-                            self.game_transaction['their_turn']):
-            print "Other player's commitment did not reveal to their claimed turn, terminating"
-            return
-        
-        #send own turn 
-        request = '#'.join([Request.RESOLVE,
-                            self.game_transaction['encounter_id'],
-                            self.game_transaction['my_turn'],
-                            self.game_transaction['sigma3']])
-        self.game_transaction['sigma4'] = self._PlayerServer.crypto.sign(request)
-        self.request.send('#'.join([request,self.game_transaction['sigma4']]))
-        
-        #figure out who won and post game transaction to server, this 
-        #functionality is the same so create another function for resolve to also call
-        
-    def resolve_game(self, payload):
-        ##5
-        #extract their turn 
-        try:
-            encounter_id, their_turn, sigma3, sigma4 = payload
-        except:
-            raise CommunicationException("Payload not properly formatted")
+        #checks to see if the defender posted correctly to close encounter
+        #TODO - query game state and see if no longer in encounter 
         
         
-        if not self._PlayerServer.crypto.verify(message, sigma3):
-            print "Did not come from valid player, terminating"
-            return
         
-        #set final variables in game_transaction
-        self.game_transaction['their_turn'] = their_turn
-        self.game_transaction['sigma4'] = sigma4
-
-        #verify their commitment
-        if self._PlayerServer.crypto.reveal_correct(
-                            self.game_transaction['their_turn_commitment'],
-                            self.game_transaction['their_turn']):
-            print "Other player's commitment did not reveal to their claimed turn, terminating"
-            return
         
-        #figure out who won and post game transaction to server, this 
-        #functionality is the same so create another function for resolve to also call
-        self.request.send('#'.join([Request.DONE, 
-                                    self.game_transaction['encounter_id']]))
+        
+    
         
 class PlayerServer(SocketServer.TCPServer):
-    def __init__(self, server_address, crypto, handler_class=PlayerConnRequestHandler):
+    def __init__(self, server_address, key, handler_class=PlayerConnRequestHandler):
         SocketServer.TCPServer.__init__(self, server_address, handler_class)
-        self.crypto = crypto
+        self.key = key
 
     

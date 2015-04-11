@@ -104,10 +104,13 @@ class AccountState(BaseStructure):
             "stake", "balance"]
 
 class CommitTransaction(BaseStructure):
-    name = "Commitment"
+    name = "CommitTransaction"
     keys = ["prev", "commitment"]
 
-
+class RevealTransaction(BaseStructure):
+    name = "RevealTransaction"
+    keys = ['prev','value']
+    
 class Resolution(BaseStructure):
     name = "Resolution"
     keys = ["prev"]
