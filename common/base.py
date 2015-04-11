@@ -88,17 +88,20 @@ class InitiateEncounter(BaseStructure):
     keys = ["challenger", "defender", "begin_by", "end_by",
             "begin_at"]
 
-
+class PostInitiateEncoutner(BaseStructure):
+    name = "PostInitiateEncounter"
+    keys = ["challenger", "defender", "begin_by", "end_by",
+            "begin_at", "challenger_sign"]
+    
 class AccountState(BaseStructure):
     name = "AccountState"
     keys = ["account", "encounter_begin_at", "encounter_end_by",
             "in_encounter_with", "partial_chain_length",
             "stake", "balance"]
 
-
-class Commitment(BaseStructure):
+class CommitTransaction(BaseStructure):
     name = "Commitment"
-    keys = ["prev", "value"]
+    keys = ["prev", "commitment"]
 
 
 class Resolution(BaseStructure):
