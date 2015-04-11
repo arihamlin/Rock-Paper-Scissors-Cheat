@@ -93,6 +93,10 @@ class PostInitiateEncoutner(BaseStructure):
     keys = ["challenger", "defender", "begin_by", "end_by",
             "begin_at", "challenger_sign"]
     
+class QueryState(BaseStructure):
+    name = "QueryState"
+    keys = ["account"]
+
 class AccountState(BaseStructure):
     name = "AccountState"
     keys = ["account", "encounter_begin_at", "encounter_end_by",
