@@ -89,6 +89,11 @@ class InitiateEncounter(BaseStructure):
             "begin_at"]
 
 
+class QueryState(BaseStructure):
+    name = "QueryState"
+    keys = ["account"]
+
+
 class AccountState(BaseStructure):
     name = "AccountState"
     keys = ["account", "encounter_begin_at", "encounter_end_by",
