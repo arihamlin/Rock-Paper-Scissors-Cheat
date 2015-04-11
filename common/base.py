@@ -3,6 +3,9 @@ import json
 import hashlib
 
 
+KEY_SIZE = 2048
+
+
 class BaseStructure(object):
     name = "BaseStructure"
     keys = list()
@@ -43,14 +46,26 @@ class BaseStructure(object):
         return True
 
 
+# class RSAPublicKey(BaseStructure):
+#     name = "RSAPublicKey"
+#     keys = ["n", "e"]
+
+
+# class AccountIdentity(object):
+#     @classmethod
+#     def createFromPublicKey()
+
+
 class SignedStructure(object):
-    def __init__(self, payload, signature=None):
+    def __init__(self, payload, signature=None, key=None):
         assert payload
         self.payload = payload
         self.signature = signature
+        self.pubkey = key
 
-    def sign(self, privkey):
-        self.signature = privkey.sign(self.payload.hash(), 0)
+    def sign(self, key):
+        self.signature = key.sign(self.payload.hash(), 0)
+        self.pubkey = key.publickey()
         return self.signature
 
     def verifySignature(self, pubkey, sig=None):
@@ -120,7 +135,7 @@ if __name__ == "__main__":
     import os
     import Crypto.PublicKey.RSA as RSA
 
-    key = RSA.generate(1024, os.urandom)
+    key = RSA.generate(KEY_SIZE, os.urandom)
 
     payment = Payment(from_account="from_account", to_account="to_account", amount=10)
     s = SignedStructure(payment)
