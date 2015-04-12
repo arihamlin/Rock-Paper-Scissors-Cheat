@@ -14,6 +14,7 @@ import threading
 from enum import IntEnum
 import common.base as b
 import base64 
+import tornado.gen
 
 
 
@@ -57,48 +58,59 @@ class Request(IntEnum):
     
     
 
-class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
-
-    def handle(self):
-        #initialize encounter variables 
+class PlayerConnRequestHandler(object):
+    def __init__(self, account, stream):
+        print("Connected: ", account)
+        self.account = account
+        self.stream = stream
         self.moves = []
-        self.socket_file = self.request.makefile()
-        num_transactions = 0
+
+    def send_data(self, s):
+        self.stream.write(base64.b64encode(s) + "\n")
+
+    @tornado.gen.coroutine
+    def start(self):
+        print("Start")
+        self.timeout_handle = tornado.ioloop.IOLoop.current(
+            ).call_later(600, self.on_timeout)
+        while True:
+            line = yield self.stream.read_until("\n")
+            self.on_line(line)
+
+        # tornado.ioloop.IOLoop.current().remove_timeout(self.timeout_handle)
+
+    def on_line(self, line):
+        data = base64.b64decode(line)
+        print(data,file=sys.stderr)
+        req = int(data.split('#')[0])        
+        payload = data.split('#')[1]
         
-        timeout = time.time() + 60*10
-        while num_transactions < 13 and time.time() < timeout:
-            num_transactions += 1 
-            data = base64.b64decode(self.socket_file.readline())
-            print(data,file=sys.stderr)
-            req = int(data.split('#')[0])        
-            payload = data.split('#')[1]
-            
-            transaction = b.SignedStructure.deserialize(payload)
-            
-            #verify signature 
-            if not transaction.verifySignature(transaction.account.account_id):
-                print("Error: Transaction signature does not verify",file=sys.stderr)
-                continue
-            
-            #add transaction to list of moves 
-            self.moves.append(transaction)
-            if req == Request.INIT:    
-                self.initialize_encounter(transaction)
-            elif req == Request.D_COMMIT:
-                self.defender_commit(transaction)
-            elif req == Request.C_COMMIT:
-                self.challenger_commit(transaction)
-            elif req == Request.D_REVEAL:
-                self.defender_reveal(transaction)
-            elif req == Request.C_REVEAL:
-                self.challenger_reveal(transaction)
-            elif req == Request.RESOLVE:
-                self.resolve_game(transaction)
-            else:
-                continue
+        transaction = b.SignedStructure.deserialize(payload)
         
+        #verify signature 
+        if not transaction.verifySignature(transaction.account.account_id):
+            print("Error: Transaction signature does not verify",file=sys.stderr)
+            return
+        
+        #add transaction to list of moves 
+        self.moves.append(transaction)
+        if req == Request.INIT:    
+            self.initialize_encounter(transaction)
+        elif req == Request.D_COMMIT:
+            self.defender_commit(transaction)
+        elif req == Request.C_COMMIT:
+            self.challenger_commit(transaction)
+        elif req == Request.D_REVEAL:
+            self.defender_reveal(transaction)
+        elif req == Request.C_REVEAL:
+            self.challenger_reveal(transaction)
+        elif req == Request.RESOLVE:
+            self.resolve_game(transaction)
+
+    def on_timeout(self):
         #TODO - deal with ragequit case (timeout)
-        
+        pass
+
     def _get_player_input(self, prompt): 
         """
         Arguments:
@@ -138,8 +150,8 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         self.my_turn = b.Commitment(input=turn)
         commit_transaction = b.SignedStructure(b.CommitTransaction(prev=prev, 
                                                                   commitment=self.my_turn.serialize()), 
-                                              account=self.server.account)
-        commit_transaction.sign(self.server.account)
+                                              account=self.account)
+        commit_transaction.sign(self.account)
         self.moves.append(commit_transaction)
         
         return commit_transaction
@@ -148,8 +160,8 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         reveal_transaction = b.SignedStructure(b.RevealTransaction(prev=prev,
                                                                    value=self.turn,
                                                                    secret=self.my_turn.secret),
-                                               account=self.server.account)
-        reveal_transaction.sign(self.server.account)
+                                               account=self.account)
+        reveal_transaction.sign(self.account)
         self.moves.append(reveal_transaction)
         return reveal_transaction
     
@@ -166,7 +178,7 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         play_game = self._get_player_input("Play a game (Y/N): ")
         
-        if play_game != 'Y':
+        if play_game.upper() != 'Y':
             return 
         
         #Sign the encounter and post to the server
@@ -184,8 +196,8 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #get player turn and get the commitment 
         commit_transaction = self._commit_turn(encounter_start_at)
-        self.request.sendall(base64.b64encode("#".join([str(Request.D_COMMIT.value),
-                                                  commit_transaction.serialize()])))
+        self.send_data("#".join([str(Request.D_COMMIT.value),
+                                                  commit_transaction.serialize()]))
         
     def defender_commit(self, transaction):
         assert transaction.payload.name =="CommitTransaction"
@@ -196,16 +208,16 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #get player turn and get the commitment
         commit_transaction = self._commit_turn(transaction.signature)
-        self.request.sendall(base64.b64encode("#".join([str(Request.C_COMMIT.value),
-                                                  commit_transaction.serialize()])))
+        self.send_data("#".join([str(Request.C_COMMIT.value),
+                                                  commit_transaction.serialize()]))
         
     def challenger_commit(self, transaction):
         assert transaction.payload.name == "CommitTransaction"
         
         #construct reveal transaction object for defender
         reveal_transaction = self._reveal_turn(transaction.signature)
-        self.request.sendall(base64.b64encode("#".join([str(Request.D_REVEAL.value),
-                                                  reveal_transaction.serialize()])))
+        self.send_data("#".join([str(Request.D_REVEAL.value),
+                                                  reveal_transaction.serialize()]))
         
     def defender_reveal(self, transaction):
         assert transaction.payload.name == 'RevealTransaction'
@@ -217,8 +229,8 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #construct reveal transaction object for challenger
         reveal_transaction = self._reveal_turn(transaction.signature)
-        self.request.sendall(base64.b64encode("#".join([str(Request.D_REVEAL.value),
-                                                  reveal_transaction.serialize()])))
+        self.send_data("#".join([str(Request.D_REVEAL.value),
+                                                  reveal_transaction.serialize()]))
     
     def challenger_reveal(self, transaction):
         assert transaction.payload.name == 'RevealTransaction'
@@ -230,11 +242,11 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #send resolution
         resolve_transaction = b.SignedStructure(b.ResolveTransaction(prev=transaction.signature),
-                                                account=self.server.account)
-        resolve_transaction.sign(self.server.account)
+                                                account=self.account)
+        resolve_transaction.sign(self.account)
         self.moves.append(resolve_transaction)
-        self.request.sendall(base64.b64encode('#'.join([str(Request.RESOLVE.value),
-                                                  resolve_transaction.serialize()])))
+        self.send_data('#'.join([str(Request.RESOLVE.value),
+                                                  resolve_transaction.serialize()]))
         
         #post to the server to close the encounter 
         #TODO post to server to close encounter
@@ -244,12 +256,5 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #checks to see if the defender posted correctly to close encounter
         #TODO - query game state and see if no longer in encounter 
-    
-    
-        
-class PlayerServer(SocketServer.TCPServer):
-    def __init__(self, server_address, account, handler_class=PlayerConnRequestHandler):
-        SocketServer.TCPServer.__init__(self, server_address, handler_class)
-        self.account = account
 
     

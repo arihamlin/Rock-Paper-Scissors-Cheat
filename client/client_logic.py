@@ -10,32 +10,29 @@ from enum import IntEnum
 import random
 import socket
 import threading
-import SocketServer
-from client_comm import PlayerConnRequestHandler, PlayerServer, Request
+from client_comm import PlayerConnRequestHandler, Request
 import common.base as b
 import base64
-        
-class Player(object):
-    
+import tornado.tcpserver
+import tornado.tcpclient
+import tornado.ioloop
+import tornado.gen
+
+
+class Player(tornado.tcpserver.TCPServer):
     def __init__(self, server_ip, server_port, key):
-        
+        tornado.tcpserver.TCPServer.__init__(self)
         self.account = b.AccountIdentity(private_key=key)
         #initialize the server
-        self.server = PlayerServer((server_ip, server_port),
-                                    account=self.account)
-
-        # Start a thread with the server 
-        self.server_thread = threading.Thread(target=self.server.serve_forever)
-        # Exit the server thread when the main thread terminates
-        self.server_thread.daemon = True
-        self.server_thread.start()
+        self.listen(server_port)
 
     def finish_playing(self):
         """
         Call when done playing before Player goes out of scope
         """
-        self.server.shutdown()
-        
+        tornado.ioloop.IOLoop.current().stop()
+    
+    @tornado.gen.coroutine
     def start_encounter(self, defender_ip, defender_port, defender_id):
         """
         Arguments:
@@ -59,10 +56,17 @@ class Player(object):
                                                account=self.account)
         initiate_encounter.sign(self.account)
         
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((defender_ip, defender_port))
-        sock.sendall(base64.b64encode("#".join([str(Request.INIT.value),
-                                                initiate_encounter.serialize()])))
+        client = tornado.tcpclient.TCPClient()
+        stream = yield client.connect(defender_ip, defender_port)
+        stream.write(base64.b64encode("#".join([str(Request.INIT.value),
+                                                initiate_encounter.serialize()])) + "\n")
+        self.handler = PlayerConnRequestHandler(self.account, stream)
+        self.handler.start()
+
+
+    def handle_stream(self, stream, addr):
+        self.handler = PlayerConnRequestHandler(self.account, stream)
+        self.handler.start()
 
     def get_ledger_state(self):
         """
@@ -70,3 +74,6 @@ class Player(object):
         """
         pass
         
+
+if __name__ == "__main__":
+    tornado.ioloop.IOLoop.current().start()
