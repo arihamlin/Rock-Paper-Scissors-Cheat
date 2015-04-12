@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+import sys, os.path
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
+
 import json
 import hashlib
 import os
@@ -92,12 +95,11 @@ class AccountIdentity(BaseStructure):
 
 
 class SignedStructure(object):
-    def __init__(self, payload, account=None, signature=None, key=None):
+    def __init__(self, payload, account=None, signature=None):
         assert payload
         self.account = account
         self.payload = payload
         self.signature = signature
-        self.pubkey = key
 
     def sign(self, account):
         self.account = account
@@ -119,7 +121,7 @@ class SignedStructure(object):
             }, sort_keys=True)
 
     @classmethod
-    def deserialize(self, bytes, pubkey=None):  # verifies signature
+    def deserialize(self, bytes):  
         obj = json.loads(bytes)
         assert "name" in obj
         assert "payload" in obj
@@ -167,13 +169,12 @@ class Payment(BaseStructure):
 
 class InitiateEncounter(BaseStructure):
     name = "InitiateEncounter"
-    keys = ["challenger", "defender", "begin_by", "end_by",
-            "begin_at"]
+    keys = ["challenger", "defender", "begin_by", "end_by"]
 
 class PostInitiateEncounter(BaseStructure):
     name = "PostInitiateEncounter"
     keys = ["challenger", "defender", "begin_by", "end_by",
-            "begin_at", "challenger_sign"]
+             "challenger_sign"]
 
 class QueryState(BaseStructure):
     name = "QueryState"

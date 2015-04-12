@@ -3,6 +3,8 @@
 Purpose: Contains the logic for playing a game client side
 Author: ATLH, 4/6/15
 """
+import sys, os.path
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 
 from enum import IntEnum
 import random
@@ -10,7 +12,7 @@ import socket
 import threading
 import SocketServer
 from client_comm import PlayerConnRequestHandler, PlayerServer, Request
-from client_crypto import PlayerCrypto
+import common.base as b
 
 #need to figure out ultimate interface, everything below this is just example code 
 def client(ip, port, message):
@@ -23,15 +25,14 @@ def client(ip, port, message):
         
 class Player(object):
     
-    def __init__(self, server_ip, server_port, crypto_object):
+    def __init__(self, server_ip, server_port, key):
         
-        self.crypto_object = crypto_object 
+        self.account = b.AccountIdentity(key=key)
         #initialize the server
         self.server = PlayerServer((server_ip, server_port),
-                                        crypto_object)
+                                    account=self.account)
 
-        # Start a thread with the server -- that thread will then start one
-        # more thread for each request
+        # Start a thread with the server 
         self.server_thread = threading.Thread(target=self.server.serve_forever)
         # Exit the server thread when the main thread terminates
         self.server_thread.daemon = True
@@ -43,38 +44,37 @@ class Player(object):
         """
         self.server.shutdown()
         
-    def start_encounter(self, player_ip, player_port):
+    def start_encounter(self, defender_ip, defender_port, defender_id):
         """
         Arguments:
         player_ip - IP address of the player
-        player_port - Port of the other player 
+        player_port - Port of the other player
+        defender_id - the id in the ledger of the defender 
         """
+        #check to see if defender is in a game
+        #TODO
+        
+        #talk to voters to determine the begin_by and end_by ledger numbers
+        #TODO: talk to server to get current state
+        begin_by = 0
+        end_by = 0
+        
+        #create initiate encounter object 
+        initiate_encounter = b.SignedStructure(b.InitiateEncounter(challenger=self.account.account_id,
+                                                 defender=defender_id,
+                                                 begin_by=begin_by,
+                                                 end_by=end_by),
+                                               account=self.account)
+        initiate_encounter.sign(self.account)
+        
+        
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((player_ip, player_port))
-        #need to update to challenger, defender, begin_by, end_by = payload
-        #get these values for begin_by and end_by by querying server for 
-        #current ledger number and then do math
-        #
-        sock.sendall("#".join([str(Request.INIT),
-                               #this is the ledger that the encounter was initiated at 
-                               str(random.randint(0,100000)),
-                               #this needs to change to the two player identities and the 
-                               #ledger it is good until 
-                               self.crypto_object.sign('Play Game?')]))
+        sock.connect((defender_ip, defender_port))
+        sock.sendall("#".join([str(Request.INIT),initiate_encounter.serialize()]))
 
     def get_ledger_state(self):
         """
         get current ledger state, take state which most voters agree on. 
-        
-        
-        
-        Needs to check ledger and make sure all moves are verified
-        Will probably need to add some sort of game state to the
-        player object where it grabs things when started, 
-        keeps track of all the moves, and then can verify 
-        at any given time the state of the game. (this implies
-        the game transactions need to also come up to 
-        this level...)
         """
         pass
         

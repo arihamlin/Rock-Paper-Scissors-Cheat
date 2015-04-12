@@ -7,6 +7,8 @@ Author: ATLH, 4/6/15
 
 import socket
 import SocketServer
+import random
+import time 
 from enum import IntEnum
 import common.base as b
 
@@ -59,14 +61,22 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         self.socket_file = self.request.makefile()
         num_transactions = 0
         
-        while num_transactions < 13 #TODO - or timeout:
+        timeout = time.time() + 60*10
+        while num_transactions < 13 and time.time() < timeout:
             num_transactions += 1 
             data = self.socket_file.readline().strip()
             req = data.split('#')[0]        
             payload = data.split('#')[1:]
             
-            transaction = SignedStructure.deserialize(payload)
-            #TODO Verify signature on transaction
+            transaction = b.SignedStructure.deserialize(payload)
+            
+            #verify signature 
+            if not transaction.verifySignature(transaction.account.account_id):
+                print "Error: Transaction signature does not verify"
+                continue
+            
+            #add transaction to list of moves 
+            self.moves.append(transaction)
             
             if req == Request.INIT:            
                 self.initialize_encounter(transaction)
@@ -82,7 +92,9 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
                 self.resolve_game(transaction)
             else:
                 continue
-            
+        
+        #TODO - deal with ragequit case (timeout)
+        
     def _get_player_input(self, prompt): 
         """
         Arguments:
@@ -100,8 +112,10 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         input_thread.daemon = True
         input_thread.start()
         
-        #wait for user_input to get set - TODO: may want to time this out...
-        while user_input[0] == None:
+        #wait for user_input to get set - 
+        timeout = time.time() + 60
+        while user_input[0] == None and time.time() < timeout:
+            time.sleep(1)
             continue   
         
         return user_input[0]
@@ -112,28 +126,37 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
     
         #sanitize user input
         if self.turn not in ['R','P','S']:
-            #TODO: In the future lets randomize this 
-            print "Option not understood, choosing Rock."
-            self.turn = 'R'
+            self.turn = random.choice(['R','P','S'])
+            print "Option not understood or not chosen, choosing ", self.turn
         
         #Commit to turn and send that to challenger
         commitment = b.CommitStructure(self.turn)
         commitment.commit()
         commt_transaction = b.SignedStructure(b.CommitTransaction(prev=prev, 
-                                                                  commitment=commitment.serialize()))
-        commit_transaction.sign(self._PlayerServer.key)
+                                                                  commitment=commitment.serialize()), 
+                                              account=self._PlayerServer.account)
+        commit_transaction.sign(self._PlayerServer.account)
         self.moves.append(commit_transaction)
+        
         return commit_transaction
     
     def _reveal_turn(self, prev):
         reveal_transaction = b.SignedStructure(b.RevealTransaction(prev=prev,
-                                                                   value=self.turn))
-        reveal_transaction.sign(self._PlayerServer.key)
+                                                                   value=self.turn),
+                                               account=self._PlayerServer.account)
+        reveal_transaction.sign(self._PlayerServer.account)
         self.moves.append(reveal_transaction)
         return reveal_transaction
     
+    def _verify_commitment(self, reveal_transaction):
+        value = reveal_transaction.payload.value
+        commitment = b.Commitment.deserialize(self.moves[-3].payload.commitment)
+        return commitment.verifyCommitment(value)
+        
     def initialize_encouter(self, transaction): 
         assert transaction.payload.name == "InitiateEncounter"
+        
+        #TODO - check to see if it is worth playing the game at all
         
         play_game = self.get_player_input("Play a game (Y/N): ")
         
@@ -175,7 +198,9 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         assert transaction.payload.name == 'RevealTransaction'
         
         #check that the commitment is valid
-        #TODO: check commitment value
+        if not self._verify_commitment(transaction.payload):
+            print "Error: Commitment is not valid"
+            return 
         
         #construct reveal transaction object for challenger
         reveal_transaction = self._reveal_turn(transaction.signature)
@@ -184,12 +209,15 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
     def challenger_reveal(self, transaction):
         assert transaction.payload.name == 'RevealTransaction'
         
-        #check that the commitment is valie
-        #TODO check commitment value
+        #check that the commitment is valid
+        if not self._verify_commitment(transaction.payload):
+            print "Error: Commitment is not valid"
+            return 
         
         #send resolution
-        resolve_transaction = b.SignedStructure(b.ResolveTransaction(prev=transaction.signature))
-        resolve_transaction.sign(self._PlayerServer.key)
+        resolve_transaction = b.SignedStructure(b.ResolveTransaction(prev=transaction.signature),
+                                                account=self._PlayerServer.account)
+        resolve_transaction.sign(self._PlayerServer.account)
         self.moves.append(resolve_transaction)
         self.request.send('#'.join([Request.RESOLVE,resolve_transaction.serialize()]))
         
@@ -201,16 +229,12 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #checks to see if the defender posted correctly to close encounter
         #TODO - query game state and see if no longer in encounter 
-        
-        
-        
-        
-        
+    
     
         
 class PlayerServer(SocketServer.TCPServer):
-    def __init__(self, server_address, key, handler_class=PlayerConnRequestHandler):
+    def __init__(self, server_address, account, handler_class=PlayerConnRequestHandler):
         SocketServer.TCPServer.__init__(self, server_address, handler_class)
-        self.key = key
+        self.account = account
 
     
