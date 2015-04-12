@@ -158,7 +158,7 @@ class PlayerConnRequestHandler(object):
     
     def _reveal_turn(self, prev):
         reveal_transaction = b.SignedStructure(b.RevealTransaction(prev=prev,
-                                                                   value=self.my_turn,
+                                                                   value=self.my_turn.input,
                                                                    secret=base64.b64encode(self.my_turn.secret)),
                                                account=self.account)
         reveal_transaction.sign(self.account)
@@ -166,8 +166,9 @@ class PlayerConnRequestHandler(object):
         return reveal_transaction
     
     def _verify_commitment(self, reveal_transaction):
-        value = reveal_transaction.payload.value
-        secret = base64.b64decode(reveal_transaction.payload.secret)
+        value = reveal_transaction.value
+        secret = base64.b64decode(reveal_transaction.secret)
+        print(self.moves)
         commitment = b.Commitment.deserialize(self.moves[-3].payload.commitment)
         return commitment.verifyCommitment(secret, value)
         

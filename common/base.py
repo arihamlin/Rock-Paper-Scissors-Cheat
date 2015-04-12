@@ -153,7 +153,7 @@ class Commitment(BaseStructure):
 
     def computeCommitment(self, input, secret):
         assert secret is not None
-        return hashlib.sha256(input + secret).hexdigest()
+        return hashlib.sha256(bytes(input) + secret).hexdigest()
 
     def getSecret(self):
         return self.secret
@@ -164,13 +164,13 @@ class Commitment(BaseStructure):
             self.data["proof"] = self.computeCommitment(self.data["input"], self.secret)
         return json.dumps({"proof": self.proof}, sort_keys=True)
 
-    @classmethod
-    def deserialize(cls, bytes):
-        obj = BaseStructure.deserialize(cls, bytes)
+    #@classmethod
+    #def deserialize(cls, bytes):
+    #    obj = BaseStructure.deserialize(bytes)
 
     def verifyCommitment(self, secret, input):
         assert "proof" in self.data
-        return self.data["proof"] == self.computeCommitment(input, self.secret)
+        return self.data["proof"] == self.computeCommitment(input, secret)
 
 
 class Payment(BaseStructure):
