@@ -10,21 +10,17 @@ tornado.log.enable_pretty_logging()
 
 
 class Voter(VoterNode):
-    def __init__(self, addr, identity):
+    def __init__(self, addr):
         VoterNode.__init__(self, addr)
-        self.identity = identity
 
     def on_connect(self):
-        self.broadcast_message({
-                "event": "register",
-                "identity": self.identity
-            })
+        pass
 
-    def on_message(self, msg):
-        print msg
+    def on_message(self, sender_id, msg):
+        pass
 
     def on_close(self):
-        super(self).on_close()
+        VoterNode.on_close(self)
         # clean up
 
 
@@ -36,18 +32,13 @@ class VoterInterface(tornado.web.RequestHandler):
         self.finish({})
 
 if __name__ == "__main__":
-    if len(sys.argv) != 5:
-        print >> sys.stderr, "Usage: %s <relay host> <relay port> <interface port> <identity>" % sys.argv[0]
+    if len(sys.argv) != 3:
+        print >> sys.stderr, "Usage: %s <relay host> <relay port>" % sys.argv[0]
         sys.exit(1)
 
     host = sys.argv[1]
     port = int(sys.argv[2])
-    infport = int(sys.argv[3])
-    identity = sys.argv[4]
 
-    voter = Voter((host, port), identity)
-    app = tornado.web.Application([
-            (r'/', VoterInterface, dict(voter=voter))
-        ])
+    voter = Voter((host, port))
     tornado.ioloop.IOLoop.instance().start()
 
