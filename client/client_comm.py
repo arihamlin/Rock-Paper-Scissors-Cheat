@@ -4,13 +4,17 @@ Purpose: Contains the logic for client communication with
 other clients and the server 
 Author: ATLH, 4/6/15
 """
-
+from __future__ import print_function
 import socket
 import SocketServer
 import random
 import time 
+import sys
+import threading
 from enum import IntEnum
 import common.base as b
+
+
 
 class CommunicationException(Exception):
     pass
@@ -50,7 +54,6 @@ class Request(IntEnum):
     C_REVEAL = 5
     RESOLVE = 6
     
-
     
 
 class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
@@ -65,20 +68,19 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         while num_transactions < 13 and time.time() < timeout:
             num_transactions += 1 
             data = self.socket_file.readline().strip()
-            req = data.split('#')[0]        
-            payload = data.split('#')[1:]
+            req = int(data.split('#')[0])        
+            payload = data.split('#')[1]
             
             transaction = b.SignedStructure.deserialize(payload)
             
             #verify signature 
             if not transaction.verifySignature(transaction.account.account_id):
-                print "Error: Transaction signature does not verify"
+                print("Error: Transaction signature does not verify",file=sys.stderr)
                 continue
             
             #add transaction to list of moves 
             self.moves.append(transaction)
-            
-            if req == Request.INIT:            
+            if req == Request.INIT:    
                 self.initialize_encounter(transaction)
             elif req == Request.D_COMMIT:
                 self.defender_commit(transaction)
@@ -102,6 +104,7 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         Returns: user input
         """
+        
         user_input = [None]
 
         # spawn a new thread to wait for input 
@@ -127,7 +130,7 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         #sanitize user input
         if self.turn not in ['R','P','S']:
             self.turn = random.choice(['R','P','S'])
-            print "Option not understood or not chosen, choosing ", self.turn
+            print("Option not understood or not chosen, choosing ", self.turn,file=sys.stderr)
         
         #Commit to turn and send that to challenger
         commitment = b.CommitStructure(self.turn)
@@ -153,19 +156,23 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         commitment = b.Commitment.deserialize(self.moves[-3].payload.commitment)
         return commitment.verifyCommitment(value)
         
-    def initialize_encouter(self, transaction): 
+    def initialize_encounter(self, transaction): 
         assert transaction.payload.name == "InitiateEncounter"
         
         #TODO - check to see if it is worth playing the game at all
         
-        play_game = self.get_player_input("Play a game (Y/N): ")
+        play_game = self._get_player_input("Play a game (Y/N): ")
         
         if play_game != 'Y':
             return 
         
         #Sign the encounter and post to the server
-        transaction.payload['challenger_sign'] = transaction.signature
-        init_transaction = b.PostIntiateEncounter(*transaction.payload.__dict__)
+        init = transaction.payload
+        init_transaction = b.PostInitiateEncounter(challenger=init.challenger,
+                                                   defender=init.defender,
+                                                   begin_by=begin_by,
+                                                   end_by=end_by,
+                                                   challenger_sign=transaction.signature)
         #TODO: post to the server 
         
         #Wait until can get encounter_start at
@@ -174,7 +181,7 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #get player turn and get the commitment 
         commit_transaction = self._commit_turn(encounter_start_at)
-        self.request.send("#".join([Request.D_COMMIT,commit_transaction.serialize()]))
+        self.request.send("#".join([str(Request.D_COMMIT.value),commit_transaction.serialize()]))
         
     def defender_commit(self, transaction):
         assert transaction.payload.name =="CommitTransaction"
@@ -185,33 +192,33 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
         
         #get player turn and get the commitment
         commit_transaction = self._commit_turn(transaction.signature)
-        self.request.send("#".join([Request.C_COMMIT,commit_transaction.serialize()]))
+        self.request.send("#".join([str(Request.C_COMMIT.value),commit_transaction.serialize()]))
         
     def challenger_commit(self, transaction):
         assert transaction.payload.name == "CommitTransaction"
         
         #construct reveal transaction object for defender
         reveal_transaction = self._reveal_turn(transaction.signature)
-        self.request.send("#".join([Request.D_REVEAL,reveal_transaction.serialize()]))
+        self.request.send("#".join([str(Request.D_REVEAL.value),reveal_transaction.serialize()]))
         
     def defender_reveal(self, transaction):
         assert transaction.payload.name == 'RevealTransaction'
         
         #check that the commitment is valid
         if not self._verify_commitment(transaction.payload):
-            print "Error: Commitment is not valid"
+            print("Error: Commitment is not valid",file=sys.stderr)
             return 
         
         #construct reveal transaction object for challenger
         reveal_transaction = self._reveal_turn(transaction.signature)
-        self.request.send("#".join([Request.D_REVEAL,reveal_transaction.serialize()]))
+        self.request.send("#".join([str(Request.D_REVEAL.value),reveal_transaction.serialize()]))
     
     def challenger_reveal(self, transaction):
         assert transaction.payload.name == 'RevealTransaction'
         
         #check that the commitment is valid
         if not self._verify_commitment(transaction.payload):
-            print "Error: Commitment is not valid"
+            print("Error: Commitment is not valid",file=sys.stderr)
             return 
         
         #send resolution
@@ -219,7 +226,7 @@ class PlayerConnRequestHandler(SocketServer.BaseRequestHandler):
                                                 account=self._PlayerServer.account)
         resolve_transaction.sign(self._PlayerServer.account)
         self.moves.append(resolve_transaction)
-        self.request.send('#'.join([Request.RESOLVE,resolve_transaction.serialize()]))
+        self.request.send('#'.join([str(Request.RESOLVE.value),resolve_transaction.serialize()]))
         
         #post to the server to close the encounter 
         #TODO post to server to close encounter

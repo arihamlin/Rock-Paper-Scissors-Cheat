@@ -13,15 +13,6 @@ import threading
 import SocketServer
 from client_comm import PlayerConnRequestHandler, PlayerServer, Request
 import common.base as b
-
-#need to figure out ultimate interface, everything below this is just example code 
-def client(ip, port, message):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip, port))
-    sock.sendall(message)
-    response = sock.recv(1024)
-    print "Received: {}".format(response)
-    sock.close()
         
 class Player(object):
     
@@ -70,7 +61,7 @@ class Player(object):
         
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((defender_ip, defender_port))
-        sock.sendall("#".join([str(Request.INIT),initiate_encounter.serialize()]))
+        sock.sendall("#".join([str(Request.INIT.value),initiate_encounter.serialize()]))
 
     def get_ledger_state(self):
         """
