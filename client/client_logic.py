@@ -13,12 +13,13 @@ import threading
 import SocketServer
 from client_comm import PlayerConnRequestHandler, PlayerServer, Request
 import common.base as b
+import base64
         
 class Player(object):
     
     def __init__(self, server_ip, server_port, key):
         
-        self.account = b.AccountIdentity(key=key)
+        self.account = b.AccountIdentity(private_key=key)
         #initialize the server
         self.server = PlayerServer((server_ip, server_port),
                                     account=self.account)
@@ -58,10 +59,10 @@ class Player(object):
                                                account=self.account)
         initiate_encounter.sign(self.account)
         
-        
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((defender_ip, defender_port))
-        sock.sendall("#".join([str(Request.INIT.value),initiate_encounter.serialize()]))
+        sock.sendall(base64.b64encode("#".join([str(Request.INIT.value),
+                                                initiate_encounter.serialize()])))
 
     def get_ledger_state(self):
         """

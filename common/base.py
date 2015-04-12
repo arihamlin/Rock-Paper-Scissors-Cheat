@@ -68,10 +68,10 @@ class AccountIdentity(BaseStructure):
             encoded_public_key=None):
         BaseStructure.__init__(self)
         self.account_id = account_id
-        if public_key:
-            self.public_key = self.decodePublicKey(public_key)
+        if encoded_public_key:
+            self.public_key = self.decodePublicKey(encoded_public_key)
         else:
-            self.public_key = key.publickey()
+            self.public_key = private_key.publickey()
         self.private_key = private_key
 
         if self.account_id is None and self.public_key is not None:
@@ -161,16 +161,16 @@ class Commitment(BaseStructure):
     def serialize(self):
         if "hash" not in self.data:
             self.secret = os.urandom(20)
-            self.data["hash"] = computeCommitment(self.data["input"], self.secret)
+            self.data["hash"] = self.computeCommitment(self.data["input"], self.secret)
         return BaseStructure.serialize(self)
 
     @classmethod
     def deserialize(cls, bytes):
         obj = BaseStructure.deserialize(cls, bytes)
 
-    def verifyCommitment(self, secret):
+    def verifyCommitment(self, secret, input):
         assert "hash" in self.data
-        return self.data["hash"] == computeCommitment(self.data["input"], self.secret)
+        return self.data["hash"] == self.computeCommitment(input, self.secret)
 
 
 class Payment(BaseStructure):
@@ -203,7 +203,7 @@ class CommitTransaction(BaseStructure):
 
 class RevealTransaction(BaseStructure):
     name = "RevealTransaction"
-    keys = ['prev','value']
+    keys = ['prev','value','secret']
     
 class Resolution(BaseStructure):
     name = "Resolution"
