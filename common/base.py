@@ -59,6 +59,9 @@ class BaseStructure(object):
         else:
             super(BaseStructure, self).__setattr__(attr, v)
 
+    def __repr__(self):
+        return self.name
+
 
 class AccountIdentity(BaseStructure):
     name = "AccountIdentity"
@@ -145,6 +148,8 @@ class SignedStructure(object):
         account = AccountIdentity.deserialize(obj["account"])
         return SignedStructure(payload, signature=obj["signature"], account=account)
 
+    def __repr__(self):
+        return "SignedStructure(%s)" % self.payload.name
 
 class Commitment(BaseStructure):
     name = "Commitment"
