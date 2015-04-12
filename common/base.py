@@ -50,24 +50,35 @@ class BaseStructure(object):
                 return False
         return True
 
+    def __getattr__(self, attr):
+        return self.data[attr]
+
+    def __setattr__(self, attr, v):
+        if attr != "data" and attr != "keys" and attr in self.keys:
+            self.data[attr] = v
+        else:
+            super(BaseStructure, self).__setattr__(attr, v)
+
 
 class AccountIdentity(BaseStructure):
     name = "AccountIdentity"
-    keys = ["account_id", "public_key"]
+    keys = ["account_id", "encoded_public_key"]
 
-    def __init__(self, account_id=None, key=None, public_key=None):
+    def __init__(self, account_id=None, private_key=None, public_key=None,
+            encoded_public_key=None):
+        BaseStructure.__init__(self)
         self.account_id = account_id
-        if public_key:
-            self.public_key = self.decodePublicKey(public_key)
+        if encoded_public_key:
+            self.public_key = self.decodePublicKey(encoded_public_key)
         else:
-            self.public_key = key.publickey()
-        self.key = key
+            self.public_key = private_key.publickey()
+        self.private_key = private_key
 
         if self.account_id is None and self.public_key is not None:
             self.account_id = AccountIdentity.findAccountName(self.public_key)
 
-        BaseStructure.__init__(self, account_id=self.account_id,
-            public_key=self.encodePublicKey(self.public_key))
+        self.encoded_public_key = encoded_public_key or self.encodePublicKey(
+            self.public_key)
 
     def decodePublicKey(self, encoded):
         return RSA.importKey(encoded.decode("base64"))
@@ -77,13 +88,13 @@ class AccountIdentity(BaseStructure):
 
     @classmethod
     def findAccountName(cls, public_key):
-        return hashlib.sha1(public_key.exportKey(format="DER")).hexdigest()
+        return hashlib.sha256(public_key.exportKey(format="DER")).hexdigest()[-36:].encode("base64").strip()
 
     def hasPrivateKey(self):
-        return self.key.has_private()
+        return self.private_key.has_private()
 
     def sign(self, M):
-        return self.key.sign(M, 0)
+        return self.private_key.sign(M, 0)
 
     def verifySignature(self, M, sig):
         if self.account_id != AccountIdentity.findAccountName(self.public_key):
@@ -137,7 +148,7 @@ class SignedStructure(object):
 
 class Commitment(BaseStructure):
     name = "Commitment"
-    keys = ["input", "hash"]
+    keys = ["input", "proof"]
     secret = None
 
     def computeCommitment(self, input, secret):
@@ -148,18 +159,18 @@ class Commitment(BaseStructure):
         return self.secret
 
     def serialize(self):
-        if "hash" not in self.data:
+        if "proof" not in self.data:
             self.secret = os.urandom(20)
-            self.data["hash"] = computeCommitment(self.data["input"], self.secret)
-        return BaseStructure.serialize(self)
+            self.data["proof"] = self.computeCommitment(self.data["input"], self.secret)
+        return json.dumps({"proof": self.proof}, sort_keys=True)
 
     @classmethod
     def deserialize(cls, bytes):
         obj = BaseStructure.deserialize(cls, bytes)
 
-    def verifyCommitment(self, secret):
-        assert "hash" in self.data
-        return self.data["hash"] == computeCommitment(self.data["input"], self.secret)
+    def verifyCommitment(self, secret, input):
+        assert "proof" in self.data
+        return self.data["proof"] == self.computeCommitment(input, self.secret)
 
 
 class Payment(BaseStructure):
@@ -192,7 +203,7 @@ class CommitTransaction(BaseStructure):
 
 class RevealTransaction(BaseStructure):
     name = "RevealTransaction"
-    keys = ['prev','value']
+    keys = ['prev','value','secret']
     
 class Resolution(BaseStructure):
     name = "Resolution"
@@ -208,7 +219,7 @@ if __name__ == "__main__":
     import os
 
     key = RSA.generate(KEY_SIZE, os.urandom)
-    account = AccountIdentity(key=key)
+    account = AccountIdentity(private_key=key)
     print account
 
     payment = Payment(from_account=account.account_id,
