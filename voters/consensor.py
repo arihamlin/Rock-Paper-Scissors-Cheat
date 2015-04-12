@@ -1,4 +1,5 @@
 import tornado
+import ledger
 
 ROUND_TIME = 1000 # milliseconds
 VOTING_THRESHOLDS = [0.5, 0.6, 0.7]
@@ -12,7 +13,7 @@ class Consensor:
         self.account_id = account_id
         self.private_key = private_key
         self.timer = None
-        self.last_closed_ledger = None #initialize from database
+        self.last_closed_ledger = Ledger("ledger.db") #initialize from database
         self.candidate_set = dict() #key=transaction, value=set of votes
 
 
@@ -23,7 +24,9 @@ class Consensor:
         if False: #If every tx passes FINAL_THRESHOLD
             self.finalize_ledger()
         else:
-
+            #See which transactions pass "threshold"
+            #submit a proposal for that
+            pass
 
     def finalize_ledger(self):
         final_proposal = set()
