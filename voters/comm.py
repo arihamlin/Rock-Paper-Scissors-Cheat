@@ -7,8 +7,10 @@ import tornado.ioloop
 import tornado.gen
 import tornado.log
 import logging
+import tornado.web
 import tornado.tcpclient
 import struct
+import random
 import os
 from bidict import bidict
 
@@ -35,6 +37,19 @@ class P2PNetworkRelay(tornado.tcpserver.TCPServer):
     def __init__(self):
         tornado.tcpserver.TCPServer.__init__(self)
         self.nodes = bidict()  #  node : stream
+        self.proxy_callbacks = dict()
+
+    def send_message(self, nnodes, msg, callback):
+        assert nnodes <= len(self.nodes)
+        node_id = generate_node_id()
+        self.proxy_callbacks[node_id] = callback
+        data = json.dumps(msg)
+        items = self.nodes.items()
+        random.shuffle(items)
+        for _, stream in items[:nnodes]:
+            stream.write(struct.pack("!H", len(data)))
+            stream.write(node_id)
+            stream.write(data)
 
     def print_totals(self):
         logging.info("%d voters online." % len(self.nodes))
@@ -65,9 +80,12 @@ class P2PNetworkRelay(tornado.tcpserver.TCPServer):
                 length = struct.unpack("!H", len_bytes)[0]
 
                 msg_bytes = yield stream.read_bytes(length)
-                if type_byte == TYPE_PEER_TO_PEER:
-                    node_stream = self.nodes[receiver_id:]
-                    node_stream.write(len_bytes + node_id + msg_bytes)
+                if type == TYPE_PEER_TO_PEER:
+                    if receiver_id in self.nodes:
+                        node_stream = self.nodes[receiver_id:]
+                        node_stream.write(len_bytes + node_id + msg_bytes)
+                    elif receiver_id in self.proxy_callbacks:
+                        self.proxy_callbacks[receiver_id](msg_bytes)
                 else:
                     for _, node_stream in self.nodes.iteritems():
                         if node_stream != stream:
@@ -131,4 +149,39 @@ class VoterNode(object):
         except tornado.iostream.StreamClosedError as e:
             logging.info("Disconnected!")
             self.on_close()
+
+    def remove_callback(self, node_id):
+        if node_id in self.proxy_callbacks:
+            del self.proxy_callbacks[node_id]
+
+
+class VoterInterfaceProxy(tornado.web.RequestHandler):
+    def initialize(self, relay):
+        self.relay = relay
+        self.resp = []
+        self.nnresponse = 0
+        self.node_id = None
+
+    def prepare(self):
+        pass
+
+    def on_msg(self, data):
+        msg = json.loads(data)
+        self.resp.append(msg)
+        if len(self.resp) >= self.nnresponse:
+            self.finish({"responses": self.resp})
+
+    def on_finish(self):
+        if self.node_id:
+            self.relay.remove_callback(self.node_id)
+
+    @tornado.web.asynchronous
+    def post(self):
+        nnodes = int(self.get_argument("nnodes", 1))
+        self.nresponse = int(self.get_argument("nresponse", 0))
+        req = json.loads(self.request.body)
+        if self.nresponse == 0:
+            self.finish()
+        else:
+            self.node_id = self.relay.send_message(nnodes, req, self.on_msg)
 

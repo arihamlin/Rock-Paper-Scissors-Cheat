@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import tornado.log
-import tornado.web
 import logging
 import sys
 from comm import VoterNode
@@ -23,13 +22,6 @@ class Voter(VoterNode):
         VoterNode.on_close(self)
         # clean up
 
-
-class VoterInterface(tornado.web.RequestHandler):
-    def initialize(self, voter):
-        self.voter = voter
-
-    def post(self):
-        self.finish({})
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
