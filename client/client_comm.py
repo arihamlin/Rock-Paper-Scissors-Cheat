@@ -144,7 +144,7 @@ class PlayerConnRequestHandler(object):
         #sanitize user input
         if turn not in ['R','P','S']:
             turn = random.choice(['R','P','S'])
-            print("Option not understood or not chosen, choosing ", self.turn,file=sys.stderr)
+            print("Option not understood or not chosen, choosing ", self.my_turn,file=sys.stderr)
         
         #Commit to turn and send that to challenger
         self.my_turn = b.Commitment(input=turn)
@@ -158,8 +158,8 @@ class PlayerConnRequestHandler(object):
     
     def _reveal_turn(self, prev):
         reveal_transaction = b.SignedStructure(b.RevealTransaction(prev=prev,
-                                                                   value=self.turn,
-                                                                   secret=self.my_turn.secret),
+                                                                   value=self.my_turn,
+                                                                   secret=base64.b64encode(self.my_turn.secret)),
                                                account=self.account)
         reveal_transaction.sign(self.account)
         self.moves.append(reveal_transaction)
@@ -167,7 +167,7 @@ class PlayerConnRequestHandler(object):
     
     def _verify_commitment(self, reveal_transaction):
         value = reveal_transaction.payload.value
-        secret = reveal_transaction.payload.secret
+        secret = base64.b64decode(reveal_transaction.payload.secret)
         commitment = b.Commitment.deserialize(self.moves[-3].payload.commitment)
         return commitment.verifyCommitment(secret, value)
         
