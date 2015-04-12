@@ -88,7 +88,7 @@ class AccountIdentity(BaseStructure):
 
     @classmethod
     def findAccountName(cls, public_key):
-        return hashlib.sha1(public_key.exportKey(format="DER")).hexdigest()
+        return hashlib.sha256(public_key.exportKey(format="DER")).hexdigest()[-36:].encode("base64").strip()
 
     def hasPrivateKey(self):
         return self.private_key.has_private()
