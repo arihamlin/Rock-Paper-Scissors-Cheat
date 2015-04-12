@@ -148,7 +148,7 @@ class SignedStructure(object):
 
 class Commitment(BaseStructure):
     name = "Commitment"
-    keys = ["input", "hash"]
+    keys = ["input", "proof"]
     secret = None
 
     def computeCommitment(self, input, secret):
@@ -159,18 +159,18 @@ class Commitment(BaseStructure):
         return self.secret
 
     def serialize(self):
-        if "hash" not in self.data:
+        if "proof" not in self.data:
             self.secret = os.urandom(20)
-            self.data["hash"] = self.computeCommitment(self.data["input"], self.secret)
-        return BaseStructure.serialize(self)
+            self.data["proof"] = self.computeCommitment(self.data["input"], self.secret)
+        return json.dumps({"proof": self.proof}, sort_keys=True)
 
     @classmethod
     def deserialize(cls, bytes):
         obj = BaseStructure.deserialize(cls, bytes)
 
     def verifyCommitment(self, secret, input):
-        assert "hash" in self.data
-        return self.data["hash"] == self.computeCommitment(input, self.secret)
+        assert "proof" in self.data
+        return self.data["proof"] == self.computeCommitment(input, self.secret)
 
 
 class Payment(BaseStructure):
