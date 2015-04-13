@@ -60,7 +60,11 @@ class BaseStructure(object):
             super(BaseStructure, self).__setattr__(attr, v)
 
     def __repr__(self):
-        return self.name
+        fields = []
+        for k in self.keys:
+            fields.append("%s=%s" % (k, repr(self.data.get(k, None))))
+        rep = "%s<%s>" % (self.name, ", ".join(fields))
+        return rep
 
 
 class AccountIdentity(BaseStructure):
@@ -149,7 +153,7 @@ class SignedStructure(object):
         return SignedStructure(payload, signature=obj["signature"], account=account)
 
     def __repr__(self):
-        return "SignedStructure(%s)" % self.payload.name
+        return "SignedStructure(%s)" % repr(self.payload)
 
 class Commitment(BaseStructure):
     name = "Commitment"
@@ -194,11 +198,11 @@ class PostInitiateEncounter(BaseStructure):
 
 class QueryState(BaseStructure):
     name = "QueryState"
-    keys = ["account"]
+    keys = ["account_id"]
 
 class AccountState(BaseStructure):
     name = "AccountState"
-    keys = ["account", "encounter_begin_at", "encounter_end_by",
+    keys = ["account_id", "encounter_begin_at", "encounter_end_by",
             "in_encounter_with", "partial_chain_length",
             "stake", "balance"]
 

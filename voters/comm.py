@@ -42,8 +42,13 @@ class P2PNetworkRelay(tornado.tcpserver.TCPServer):
     def send_message(self, nnodes, msg, callback):
         assert nnodes <= len(self.nodes)
         node_id = generate_node_id()
-        self.proxy_callbacks[node_id] = callback
-        data = json.dumps(msg)
+        if callback:
+            self.proxy_callbacks[node_id] = callback
+        data = json.dumps({
+            "request": msg.encode("base64"),
+            "event": "client_request"
+        })
+        print data
         items = self.nodes.items()
         random.shuffle(items)
         for _, stream in items[:nnodes]:
@@ -159,7 +164,7 @@ class VoterInterfaceProxy(tornado.web.RequestHandler):
     def initialize(self, relay):
         self.relay = relay
         self.resp = []
-        self.nnresponse = 0
+        self.nresponses = 0
         self.node_id = None
 
     def prepare(self):
@@ -167,8 +172,8 @@ class VoterInterfaceProxy(tornado.web.RequestHandler):
 
     def on_msg(self, data):
         msg = json.loads(data)
-        self.resp.append(msg)
-        if len(self.resp) >= self.nnresponse:
+        self.resp.append(msg["result"])
+        if len(self.resp) >= self.nresponses:
             self.finish({"responses": self.resp})
 
     def on_finish(self):
@@ -177,11 +182,14 @@ class VoterInterfaceProxy(tornado.web.RequestHandler):
 
     @tornado.web.asynchronous
     def post(self):
+        # nnodes = number of voter nodes to forward client's request
+        # nresponses = number of responses to wait from voters
         nnodes = int(self.get_argument("nnodes", 1))
-        self.nresponse = int(self.get_argument("nresponse", 0))
-        req = json.loads(self.request.body)
-        if self.nresponse == 0:
+        self.nresponses = int(self.get_argument("nresponses", 0))
+        print self.nresponses
+        if self.nresponses == 0:
+            self.relay.send_message(nnodes, self.request.body, None)
             self.finish()
         else:
-            self.node_id = self.relay.send_message(nnodes, req, self.on_msg)
-
+            self.node_id = self.relay.send_message(nnodes,
+                self.request.body, self.on_msg)

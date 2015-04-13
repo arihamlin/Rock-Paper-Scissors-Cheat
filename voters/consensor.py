@@ -9,9 +9,8 @@ TRANSACTION_FEE = 360
 
 
 class Consensor:
-    def __init__(self, account_id, private_key):
-        self.account_id = account_id
-        self.private_key = private_key
+    def __init__(self, account):
+        self.account = account
         self.timer = None
         self.last_closed_ledger = Ledger("ledger.db") #initialize from database
         self.candidate_set = dict() #key=transaction, value=set of votes
@@ -107,7 +106,8 @@ class Consensor:
 
 
 class Consensor:
-    def __init__(self, account_id, private_key):
+    def __init__(self, account):
+        self.account = account
         self.periodic = None
         self.round_number = 0
         self.candidate_set = set()
