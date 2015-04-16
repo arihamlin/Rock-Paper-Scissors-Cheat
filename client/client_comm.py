@@ -17,6 +17,15 @@ import base64
 import tornado.gen
 
 
+WINS = {('R','S'): 0,
+        ('R','P'): 1,
+        ('R','R'): -1,
+        ('P','R'): 0,
+        ('P','S'): 1,
+        ('P','P'): -1,
+        ('S','R'): 0,
+        ('S','P'): 1,
+        ('S','S'): -1}
 
 class CommunicationException(Exception):
     pass
@@ -26,8 +35,7 @@ class Request(IntEnum):
     Different type of requests the clients can handle:
     INIT - Game request from the challenger, defender recieves
            if accepts, sends commitment and initializes encounter
-           with the server - they also have to define the
-           encounter begins at
+           with the voters 
     D_COMMIT - Defender player has acknowledge request and returned
                their commitment, challenger have also have to 
                check with the server state that defender posted
@@ -64,6 +72,7 @@ class PlayerConnRequestHandler(object):
         self.account = account
         self.stream = stream
         self.moves = []
+        self.rounds = 0
 
     def send_data(self, s):
         self.stream.write(base64.b64encode(s) + "\n")
@@ -81,7 +90,6 @@ class PlayerConnRequestHandler(object):
 
     def on_line(self, line):
         data = base64.b64decode(line)
-        print(data,file=sys.stderr)
         req = int(data.split('#')[0])        
         payload = data.split('#')[1]
         
@@ -92,13 +100,13 @@ class PlayerConnRequestHandler(object):
             print("Error: Transaction signature does not verify",file=sys.stderr)
             return
         
-        #add transaction to list of moves 
-        self.moves.append(transaction)
         if req == Request.INIT:    
             self.initialize_encounter(transaction)
         elif req == Request.D_COMMIT:
+            self.rounds +=1
             self.defender_commit(transaction)
         elif req == Request.C_COMMIT:
+            self.rounds += 1
             self.challenger_commit(transaction)
         elif req == Request.D_REVEAL:
             self.defender_reveal(transaction)
@@ -144,7 +152,7 @@ class PlayerConnRequestHandler(object):
         #sanitize user input
         if turn not in ['R','P','S']:
             turn = random.choice(['R','P','S'])
-            print("Option not understood or not chosen, choosing ", self.my_turn,file=sys.stderr)
+            print("Option not understood or not chosen, choosing ", turn,file=sys.stderr)
         
         #Commit to turn and send that to challenger
         self.my_turn = b.Commitment(input=turn)
@@ -152,7 +160,6 @@ class PlayerConnRequestHandler(object):
                                                                   commitment=self.my_turn.serialize()), 
                                               account=self.account)
         commit_transaction.sign(self.account)
-        self.moves.append(commit_transaction)
         
         return commit_transaction
     
@@ -162,15 +169,28 @@ class PlayerConnRequestHandler(object):
                                                                    secret=base64.b64encode(self.my_turn.secret)),
                                                account=self.account)
         reveal_transaction.sign(self.account)
-        self.moves.append(reveal_transaction)
+        
         return reveal_transaction
     
     def _verify_commitment(self, reveal_transaction):
         value = reveal_transaction.value
         secret = base64.b64decode(reveal_transaction.secret)
-        print(self.moves)
         commitment = b.Commitment.deserialize(self.moves[-3].payload.commitment)
         return commitment.verifyCommitment(secret, value)
+    
+    def _handle_win(self, my_reveal, other_player_reveal):
+        my_val = my_reveal.payload.value
+        their_val = other_player_reveal.payload.value
+        outcome = WINS[(my_val, their_val)]
+        if outcome == 1:
+            print("The other player played",their_val,
+                  "to your", my_val, "and you lost.")
+        elif outcome == 0:
+            print("The other player played",their_val,
+                  "to your", my_val, "and you won.")
+        else:
+            print("The other player played",their_val,
+                  "to your", my_val, "and you tied.")
         
     def initialize_encounter(self, transaction): 
         assert transaction.payload.name == "InitiateEncounter"
@@ -179,7 +199,7 @@ class PlayerConnRequestHandler(object):
         
         play_game = self._get_player_input("Play a game (Y/N): ")
         
-        if play_game.upper() != 'Y':
+        if play_game is None or play_game.upper() != 'Y':
             return 
         
         #Sign the encounter and post to the server
@@ -197,32 +217,35 @@ class PlayerConnRequestHandler(object):
         
         #get player turn and get the commitment 
         commit_transaction = self._commit_turn(encounter_start_at)
+        self.moves.append(commit_transaction)
         self.send_data("#".join([str(Request.D_COMMIT.value),
                                                   commit_transaction.serialize()]))
         
     def defender_commit(self, transaction):
         assert transaction.payload.name =="CommitTransaction"
-        
+        self.moves.append(transaction)
         #check to see if defender has posted to voters yet    
         #TODO - check to see if defender has posted to voters
         has_init = True
         
         #get player turn and get the commitment
         commit_transaction = self._commit_turn(transaction.signature)
+        self.moves.append(transaction)
         self.send_data("#".join([str(Request.C_COMMIT.value),
                                                   commit_transaction.serialize()]))
         
     def challenger_commit(self, transaction):
         assert transaction.payload.name == "CommitTransaction"
-        
+        self.moves.append(transaction)
         #construct reveal transaction object for defender
         reveal_transaction = self._reveal_turn(transaction.signature)
+        self.moves.append(reveal_transaction)
         self.send_data("#".join([str(Request.D_REVEAL.value),
                                                   reveal_transaction.serialize()]))
         
     def defender_reveal(self, transaction):
         assert transaction.payload.name == 'RevealTransaction'
-        
+        self.moves.append(transaction)
         #check that the commitment is valid
         if not self._verify_commitment(transaction.payload):
             print("Error: Commitment is not valid",file=sys.stderr)
@@ -230,32 +253,49 @@ class PlayerConnRequestHandler(object):
         
         #construct reveal transaction object for challenger
         reveal_transaction = self._reveal_turn(transaction.signature)
-        self.send_data("#".join([str(Request.D_REVEAL.value),
+        self.moves.append(reveal_transaction)
+        self._handle_win(self.moves[-1], self.moves[-2])
+        self.send_data("#".join([str(Request.C_REVEAL.value),
                                                   reveal_transaction.serialize()]))
     
     def challenger_reveal(self, transaction):
         assert transaction.payload.name == 'RevealTransaction'
-        
+        self.moves.append(transaction)
         #check that the commitment is valid
         if not self._verify_commitment(transaction.payload):
             print("Error: Commitment is not valid",file=sys.stderr)
             return 
         
-        #send resolution
-        resolve_transaction = b.SignedStructure(b.ResolveTransaction(prev=transaction.signature),
+        self._handle_win(self.moves[-2], self.moves[-1])
+        #two paths, either 3 rounds have happened or not
+        #or not
+        if self.rounds < 3:
+            commit_transaction = self._commit_turn(transaction.signature)
+            self.moves.append(commit_transaction)
+            self.send_data("#".join([str(Request.D_COMMIT.value),
+                                                  commit_transaction.serialize()]))
+        #else send resolution
+        else:
+            resolve_transaction = b.SignedStructure(b.Resolution(prev=transaction.signature),
                                                 account=self.account)
-        resolve_transaction.sign(self.account)
-        self.moves.append(resolve_transaction)
-        self.send_data('#'.join([str(Request.RESOLVE.value),
+            resolve_transaction.sign(self.account)
+            self.moves.append(resolve_transaction)
+            self.send_data('#'.join([str(Request.RESOLVE.value),
                                                   resolve_transaction.serialize()]))
+            tornado.ioloop.IOLoop.current().stop()
         
-        #post to the server to close the encounter 
-        #TODO post to server to close encounter
+            #post to the server to close the encounter 
+            #TODO post to server to close encounter
+        
+        #TODO break out of the while true loop up above 
         
     def resolve_game(self, transaction):
-        assert transaction.payload.name == "ResolveTransaction"
-        
+        assert transaction.payload.name == "Resolution"
+        self.moves.append(transaction)
+        tornado.ioloop.IOLoop.current().stop()
         #checks to see if the defender posted correctly to close encounter
         #TODO - query game state and see if no longer in encounter 
+        
+        #TODO break out of the while true loop up above 
 
     
