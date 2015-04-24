@@ -4,6 +4,6 @@ import tornado
 import os
 
 key = RSA.generate(1024, os.urandom)
-p1 = Player("127.0.0.1", 4243, key)
+p1 = Player("127.0.0.1", 4243, key, "127.0.0.1", 8990)
 
 tornado.ioloop.IOLoop.current().start()

@@ -11,6 +11,7 @@ import random
 import time 
 import sys
 import threading
+import tornado.httpclient
 from enum import IntEnum
 import common.base as b
 import base64 
@@ -67,12 +68,14 @@ class Request(IntEnum):
     
 
 class PlayerConnRequestHandler(object):
-    def __init__(self, account, stream):
+    def __init__(self, account, stream, voter_relay_ip, voter_relay_port):
         print("Connected: ", account)
         self.account = account
         self.stream = stream
         self.moves = []
         self.rounds = 0
+        self.voter_relay_ip = voter_relay_ip
+        self.voter_relay_port = voter_relay_port
 
     def send_data(self, s):
         self.stream.write(base64.b64encode(s) + "\n")
@@ -191,11 +194,36 @@ class PlayerConnRequestHandler(object):
         else:
             print("The other player played",their_val,
                   "to your", my_val, "and you tied.")
+            
+    def _post_request_to_voters(self, req):
+        #talk to voters to determine the begin_by and end_by ledger numbers
+        client = tornado.httpclient.HTTPClient()
+        r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=1",
+                         method="POST", body=req.serialize())
+        
+    def _get_account_state(self):
+        #talk to voters to determine the account state
+        req = b.SignedStructure(b.QueryState(account_id=self.account.account_id))
+        req.sign(self.account)
+
+        client = tornado.httpclient.HTTPClient()
+        r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=1",
+                         method="POST", body=req.serialize())
+        
+        results = json.loads(r.body)["responses"]
+        if len(results) > 1: 
+            print("Not able to get current game state")
+            
+        deserialized = b.SignedStructure.deserialize(results)
+        
+        if results.payload.name != "AccountState":
+            print("Returned value from voter is not an Account State object")
+        
+        return results
         
     def initialize_encounter(self, transaction): 
         assert transaction.payload.name == "InitiateEncounter"
         
-        #TODO - check to see if it is worth playing the game at all
         
         play_game = self._get_player_input("Play a game (Y/N): ")
         
@@ -204,16 +232,18 @@ class PlayerConnRequestHandler(object):
         
         #Sign the encounter and post to the server
         init = transaction.payload
-        init_transaction = b.PostInitiateEncounter(challenger=init.challenger,
+        init_transaction = SignedStructure(b.PostInitiateEncounter(challenger=init.challenger,
                                                    defender=init.defender,
                                                    begin_by=init.begin_by,
                                                    end_by=init.end_by,
-                                                   challenger_sign=transaction.signature)
-        #TODO: post to the server 
+                                                   challenger_sign=transaction.signature))
+        init_transaction.sign(self.account)
+        self._post_request_to_voters(init_transaction)
         
-        #Wait until can get encounter_start at
-        #TODO: query server and get encounter start at
-        encounter_start_at = 0
+        #Wait until can get encounter_start at 
+        #TODO: actually check this value
+        account_state = self._get_account_state()
+        encounter_start_at = account_state['encounter_begin_at']
         
         #get player turn and get the commitment 
         commit_transaction = self._commit_turn(encounter_start_at)
@@ -224,9 +254,12 @@ class PlayerConnRequestHandler(object):
     def defender_commit(self, transaction):
         assert transaction.payload.name =="CommitTransaction"
         self.moves.append(transaction)
+        
         #check to see if defender has posted to voters yet    
-        #TODO - check to see if defender has posted to voters
-        has_init = True
+        account_state = self._get_account_state()
+        if account_state['in_encounter_with'] != transaction.account.account_id:
+            print("Encounter hasn't started yet")
+            #TODO: loop here until it is posted
         
         #get player turn and get the commitment
         commit_transaction = self._commit_turn(transaction.signature)
@@ -285,17 +318,31 @@ class PlayerConnRequestHandler(object):
             tornado.ioloop.IOLoop.current().stop()
         
             #post to the server to close the encounter 
-            #TODO post to server to close encounter
-        
-        #TODO break out of the while true loop up above 
+            serialized_moves = "#".join([m.serialize() for m in self.moves])
+            close_transaction = b.SignedStructure(b.CloseEncounter(
+                                                        challenger=transaction.account.account_id,
+                                                        defender=self.account.account_id,
+                                                        moves=serialized_moves))
+            self._post_request_to_voters(close_transaction)
         
     def resolve_game(self, transaction):
         assert transaction.payload.name == "Resolution"
         self.moves.append(transaction)
-        tornado.ioloop.IOLoop.current().stop()
-        #checks to see if the defender posted correctly to close encounter
-        #TODO - query game state and see if no longer in encounter 
         
-        #TODO break out of the while true loop up above 
+        #checks to see if the defender posted correctly to close encounter
+        account_state = self._get_account_state()
+        if account_state['in_encounter_with'] != '': #TODO may also want to check chain length 
+            #post to the server to close the encounter 
+            serialized_moves = "#".join([m.serialize() for m in self.moves])
+            close_transaction = b.SignedStructure(b.CloseEncounter(
+                                                        challenger=transaction.account.account_id,
+                                                        defender=self.account.account_id,
+                                                        moves=serialized_moves))
+            self._post_request_to_voters(close_transaction)
+
+
+        tornado.ioloop.IOLoop.current().stop()
+        
+         
 
     

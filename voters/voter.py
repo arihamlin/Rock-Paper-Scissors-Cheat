@@ -46,6 +46,7 @@ class Voter(VoterNode):
                 in_encounter_with="",
                 partial_chain_length=0,
                 stake=0,
+                current_ledger=0,
                 balance=0)
             signed = SignedStructure(state)
             signed.sign(self.account)  #TODO: use voter's account
