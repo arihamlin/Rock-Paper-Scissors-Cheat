@@ -39,15 +39,16 @@ class Ledger():
 
 	def make_genesis(self):
 		c = self.conn.cursor()
-		c.execute("INSERT INTO ledger_main VALUES (?,?,?)", (
+		print "Making genesis"
+		c.execute("INSERT INTO ledger_main (account_id, stake, skill) VALUES (?,?,?)", (
 			"gEnEsIs_AcCoUnT_iD", # Genesis account ID
 			360000000000, # stake
 			0 # skill
 		))
-		c.execute("INSERT INTO ledger_root VALUES (?,?,?)", "", 0, "")
-		c.execute("INSERT INTO ledger_hash VALUES (?)", "")
+		c.execute("INSERT INTO ledger_root VALUES (?,?,?)", ("", 0, ""))
+		c.execute("INSERT INTO ledger_hash VALUES (?)", ("",))
 		self.conn.commit()
-		self.conn.close()
+		#self.conn.close()
 		self.update_root_and_hash()
 
 
@@ -73,16 +74,16 @@ class Ledger():
 		ledger_hash = "deadbeef" #something
 
 		c.execute("UPDATE ledger_root SET merkle_root=?, ledger_number=?, previous_hash=?",
-			merkle_root, ledger_number, previous_hash)
-		c.execute("UPDATE ledger_hash SET ledger_hash=?", ledger_hash)
-		c.commit()
+			(merkle_root, ledger_number, previous_hash))
+		c.execute("UPDATE ledger_hash SET ledger_hash=?", (ledger_hash,))
+		self.conn.commit()
 
-		self.conn.close()
+		#self.conn.close()
 
 
 	def get_account_info(self, account_id):
 		c = self.conn.cursor()
-		c.execute("SELECT * FROM ledger_main WHERE account_id = ?", account_id)
+		c.execute("SELECT * FROM ledger_main WHERE account_id = ?", (account_id,))
 		r = c.fetchone()
 		if r:
 			result = {
@@ -93,7 +94,7 @@ class Ledger():
 			#add other fields
 		else:
 			result = None
-		self.conn.close()
+		#self.conn.close()
 		return result
 
 	def get_ledger_root(self):
@@ -105,7 +106,7 @@ class Ledger():
 			"ledger_number": 1, #something
 			"previous_hash": "8badf00d" #something
 		}
-		self.conn.close()
+		#self.conn.close()
 		return result
 
 	def get_ledger_hash(self):
@@ -113,7 +114,7 @@ class Ledger():
 		c.execute("SELECT * FROM ledger_hash")
 		r = c.fetchone()
 		result = "defaced1" #something
-		self.conn.close()
+		#self.conn.close()
 		return result
 
 
@@ -125,10 +126,10 @@ def initalize_database(conn):
 		account_id TEXT NOT NULL UNIQUE,
 		stake INTEGER NOT NULL, 
 		skill INTEGER NOT NULL, 
-		in_encounter_with TEXT, 
-		encounter_begin_at INTEGER,
-		encounter_end_by INTEGER,
-		partial_chain_length INTEGER
+		in_encounter_with TEXT DEFAULT NULL, 
+		encounter_begin_at INTEGER DEFAULT NULL,
+		encounter_end_by INTEGER DEFAULT NULL,
+		partial_chain_length INTEGER DEFAULT NULL
 	)''')
 
 	c.execute('''CREATE TABLE ledger_root(
@@ -142,7 +143,7 @@ def initalize_database(conn):
 	)''')
 
 	conn.commit()
-	conn.close()
+	#conn.close()
 
 
 def is_power_of_two(num):

@@ -1,5 +1,7 @@
-import tornado
+import tornado.ioloop
+import tornado.log
 import ledger
+import logging
 
 ROUND_TIME = 1000 # milliseconds
 VOTING_THRESHOLDS = [0.5, 0.6, 0.7]
@@ -7,17 +9,20 @@ FINAL_THRESHOLD = 0.8
 NUMBER_OF_ROUNDS = len(VOTING_THRESHOLDS)
 TRANSACTION_FEE = 360
 
+tornado.log.enable_pretty_logging()
+
 
 class Consensor:
     def __init__(self, account):
         self.account = account
         self.timer = None
-        self.last_closed_ledger = Ledger("ledger.db") #initialize from database
+        self.last_closed_ledger = ledger.Ledger("ledger.db") #initialize from database
         self.candidate_set = dict() #key=transaction, value=set of votes
 
 
     # Tally up the votes, submit my proposal, and advance the round number
     def advance_round(self):
+        logging.info("Advancing!")
         threshold = VOTING_THRESHOLDS[min(NUMBER_OF_ROUNDS, self.round_number)]
         pass
         if False: #If every tx passes FINAL_THRESHOLD
@@ -80,7 +85,7 @@ class Consensor:
         if transaction not in self.candidate_set:
             self.candidate_set[transaction] = set()
             if self.would_be_valid(transaction):
-                self.candidate_set[transaction].add(self.account_id)
+                self.candidate_set[transaction].add(self.account)
 
     # Update the vote tally based on an incoming proposal
     def receive_proposal(self, proposal):
@@ -92,9 +97,14 @@ class Consensor:
         return True
 
     def start(self):
+        logging.info("Starting!")
         self.voters_seen = dict() #key=voter id, value = stake in LCL
-        my_stake = self.last_closed_ledger.get_account_info(account_id)["stake"]
-        self.voters_seen[account_id] = my_stake
+        my_info = self.last_closed_ledger.get_account_info(self.account)
+        if not my_info:
+            logging.error("Account does not exist: "+self.account)
+            return
+        my_stake = my_info["stake"]
+        self.voters_seen[self.account] = my_stake
         self.total_stake = my_stake
 
         if self.timer: self.timer.stop()
@@ -102,9 +112,11 @@ class Consensor:
         self.timer = tornado.ioloop.PeriodicCallback(self.advance_round, ROUND_TIME)
         self.timer.start()
 
+    def stop(self):
+        if self.timer: self.timer.stop()
 
 
-
+"""
 class Consensor:
     def __init__(self, account):
         self.account = account
@@ -166,7 +178,15 @@ class Consensor:
             pass
         elif self.round_number == 3:
             pass
-
+"""
 
 def is_consistent(transaction, ledger, candidates):
     return True
+
+if __name__ == "__main__":
+    def main():
+        c = Consensor("gEnEsIs_AcCoUnT_iD")
+        c.start()
+
+    tornado.ioloop.IOLoop.instance().add_callback(main)
+    tornado.ioloop.IOLoop.instance().start()
