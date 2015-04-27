@@ -59,6 +59,12 @@ class BaseStructure(object):
         else:
             super(BaseStructure, self).__setattr__(attr, v)
 
+    def __getitem__(self, attr):
+        return self.data.__getitem__(attr)
+
+    def __setitem__(self, attr, val):
+        return self.data.__setattr__(attr, val)
+
     def __repr__(self):
         fields = []
         for k in self.keys:

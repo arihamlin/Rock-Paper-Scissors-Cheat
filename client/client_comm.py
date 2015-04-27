@@ -16,6 +16,7 @@ from enum import IntEnum
 import common.base as b
 import base64 
 import tornado.gen
+import json
 
 
 WINS = {('R','S'): 0,
@@ -79,6 +80,7 @@ class PlayerConnRequestHandler(object):
 
     def send_data(self, s):
         self.stream.write(base64.b64encode(s) + "\n")
+        print("Sent data: " + s)
 
     @tornado.gen.coroutine
     def start(self):
@@ -93,6 +95,7 @@ class PlayerConnRequestHandler(object):
 
     def on_line(self, line):
         data = base64.b64decode(line)
+        print("Received data: " + data)
         req = int(data.split('#')[0])        
         payload = data.split('#')[1]
         
@@ -198,29 +201,31 @@ class PlayerConnRequestHandler(object):
     def _post_request_to_voters(self, req):
         #talk to voters to determine the begin_by and end_by ledger numbers
         client = tornado.httpclient.HTTPClient()
-        r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=1",
+        r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=0",
                          method="POST", body=req.serialize())
-        
+    
+    @tornado.gen.coroutine
     def _get_account_state(self):
         #talk to voters to determine the account state
         req = b.SignedStructure(b.QueryState(account_id=self.account.account_id))
         req.sign(self.account)
 
-        client = tornado.httpclient.HTTPClient()
-        r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=1",
+        client = tornado.httpclient.AsyncHTTPClient()
+        r = yield client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=1",
                          method="POST", body=req.serialize())
         
         results = json.loads(r.body)["responses"]
         if len(results) > 1: 
             print("Not able to get current game state")
-            
-        deserialized = b.SignedStructure.deserialize(results)
+
+        deserialized = b.SignedStructure.deserialize(results[0])
         
-        if results.payload.name != "AccountState":
+        if deserialized.payload.name != "AccountState":
             print("Returned value from voter is not an Account State object")
         
-        return results
+        raise tornado.gen.Return(deserialized)
         
+    @tornado.gen.coroutine
     def initialize_encounter(self, transaction): 
         assert transaction.payload.name == "InitiateEncounter"
         
@@ -232,7 +237,7 @@ class PlayerConnRequestHandler(object):
         
         #Sign the encounter and post to the server
         init = transaction.payload
-        init_transaction = SignedStructure(b.PostInitiateEncounter(challenger=init.challenger,
+        init_transaction = b.SignedStructure(b.PostInitiateEncounter(challenger=init.challenger,
                                                    defender=init.defender,
                                                    begin_by=init.begin_by,
                                                    end_by=init.end_by,
@@ -242,22 +247,24 @@ class PlayerConnRequestHandler(object):
         
         #Wait until can get encounter_start at 
         #TODO: actually check this value
-        account_state = self._get_account_state()
-        encounter_start_at = account_state['encounter_begin_at']
+        account_state = yield self._get_account_state()
+        print(account_state)
+        encounter_start_at = account_state.payload['encounter_begin_at']
         
         #get player turn and get the commitment 
         commit_transaction = self._commit_turn(encounter_start_at)
         self.moves.append(commit_transaction)
         self.send_data("#".join([str(Request.D_COMMIT.value),
                                                   commit_transaction.serialize()]))
-        
+    
+    @tornado.gen.coroutine
     def defender_commit(self, transaction):
         assert transaction.payload.name =="CommitTransaction"
         self.moves.append(transaction)
         
         #check to see if defender has posted to voters yet    
-        account_state = self._get_account_state()
-        if account_state['in_encounter_with'] != transaction.account.account_id:
+        account_state = yield self._get_account_state()
+        if account_state.payload['in_encounter_with'] != transaction.account.account_id:
             print("Encounter hasn't started yet")
             #TODO: loop here until it is posted
         
@@ -325,12 +332,13 @@ class PlayerConnRequestHandler(object):
                                                         moves=serialized_moves))
             self._post_request_to_voters(close_transaction)
         
+    @tornado.gen.coroutine
     def resolve_game(self, transaction):
         assert transaction.payload.name == "Resolution"
         self.moves.append(transaction)
         
         #checks to see if the defender posted correctly to close encounter
-        account_state = self._get_account_state()
+        account_state = yield self._get_account_state()
         if account_state['in_encounter_with'] != '': #TODO may also want to check chain length 
             #post to the server to close the encounter 
             serialized_moves = "#".join([m.serialize() for m in self.moves])

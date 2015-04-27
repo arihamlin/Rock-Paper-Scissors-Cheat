@@ -18,6 +18,7 @@ import tornado.tcpserver
 import tornado.tcpclient
 import tornado.ioloop
 import tornado.gen
+import json
 
 
 class Player(tornado.tcpserver.TCPServer):
@@ -27,7 +28,8 @@ class Player(tornado.tcpserver.TCPServer):
         #initialize the server
         self.listen(server_port)
         self.voter_relay_ip = voter_relay_ip
-        self.voter_relay_port = voter_relay_port 
+        self.voter_relay_port = voter_relay_port
+
     def finish_playing(self):
         """
         Call when done playing before Player goes out of scope
@@ -49,17 +51,16 @@ class Player(tornado.tcpserver.TCPServer):
         client = tornado.httpclient.HTTPClient()
         r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=1",
                          method="POST", body=req.serialize())
-        
         results = json.loads(r.body)["responses"]
         if len(results) > 1: 
             print "Not able to get current game state"
             
-        deserialized = b.SignedStructure.deserialize(results)
+        deserialized = b.SignedStructure.deserialize(results[0])
         
-        if results.payload.name != "AccountState":
+        if deserialized.payload.name != "AccountState":
             print "Returned value from voter is not an Account State object"
         
-        current_ledger = results.payload['current_ledger']
+        current_ledger = deserialized.payload.current_ledger
         
         begin_by = current_ledger 
         end_by = current_ledger + 600 # Approximately 10 minutes per game
@@ -80,12 +81,14 @@ class Player(tornado.tcpserver.TCPServer):
                                                 stream,
                                                 self.voter_relay_ip,
                                                 self.voter_relay_port)
-        self.handler.start()
+        yield self.handler.start()
 
-
+    @tornado.gen.coroutine
     def handle_stream(self, stream, addr):
-        self.handler = PlayerConnRequestHandler(self.account, stream)
-        self.handler.start()
+        self.handler = PlayerConnRequestHandler(self.account, stream,
+                                                self.voter_relay_ip,
+                                                self.voter_relay_port)
+        yield self.handler.start()
 
         
 
