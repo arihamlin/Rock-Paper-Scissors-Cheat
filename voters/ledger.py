@@ -1,4 +1,11 @@
 import sqlite3
+GENESIS_ACCOUNT_ID = "ZDRlNjg0ZDgyOGEyYTY5ZjY4MDYxZjhiYzZiYzFjNjJmZjlj"
+
+def dict_factory(cursor, row):
+	d = {}
+	for idx, col in enumerate(cursor.description):
+		d[col[0]] = row[idx]
+	return d
 
 """
 The ledger contains entries with the following fields:
@@ -29,6 +36,8 @@ class Ledger():
 			exists = False
 
 		self.conn = sqlite3.connect(db)
+		self.conn.row_factory = dict_factory
+
 		if not exists:
 			initalize_database(self.conn)
 			self.make_genesis()
@@ -41,7 +50,7 @@ class Ledger():
 		c = self.conn.cursor()
 		print "Making genesis"
 		c.execute("INSERT INTO ledger_main (account_id, stake, skill) VALUES (?,?,?)", (
-			"gEnEsIs_AcCoUnT_iD", # Genesis account ID
+			GENESIS_ACCOUNT_ID, # Genesis account ID
 			360000000000, # stake
 			0 # skill
 		))
@@ -86,12 +95,10 @@ class Ledger():
 		c.execute("SELECT * FROM ledger_main WHERE account_id = ?", (account_id,))
 		r = c.fetchone()
 		if r:
-			result = {
-				"account_id": account_id,
-				"stake": 0,
-				"skill": 0
-			}
-			#add other fields
+			c.execute("SELECT * FROM ledger_root")
+			root = c.fetchone()
+			r["current_ledger"] = root["ledger_number"]
+			return r
 		else:
 			result = None
 		#self.conn.close()

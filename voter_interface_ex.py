@@ -12,7 +12,8 @@ $ python voters/voter.py 127.0.0.1 10000 voter_account_id
 """
 
 
-account = get_account_from_seed(5124)
+account = get_account_from_seed(1)
+print account
 
 """
 Build a signed structure for request types: QueryState, InitiateEncounter,

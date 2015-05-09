@@ -39,15 +39,12 @@ class Voter(VoterNode):
         signed = SignedStructure.deserialize(req)
         print "Client request: ", signed
         if signed.payload.name == "QueryState":
+            # FIXME: use DB to return result
             query_account_id = signed.payload.account_id
-            state = AccountState(account_id=query_account_id,
-                encounter_begin_at=0,
-                encounter_end_by=0,
-                in_encounter_with="",
-                partial_chain_length=0,
-                stake=0,
-                current_ledger=0,
-                balance=0)
+            logging.info(query_account_id)
+            info = self.consensor.last_closed_ledger.get_account_info(query_account_id)
+
+            state = AccountState(**info)
             signed = SignedStructure(state)
             signed.sign(self.account)  #TODO: use voter's account
             self.send_message(sender_id, {

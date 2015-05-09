@@ -210,7 +210,7 @@ class AccountState(BaseStructure):
     name = "AccountState"
     keys = ["account_id", "encounter_begin_at", "encounter_end_by",
             "in_encounter_with", "partial_chain_length",
-            "stake", "balance","current_ledger"]
+            "stake", "skill","current_ledger"]
 
 class CommitTransaction(BaseStructure):
     name = "CommitTransaction"

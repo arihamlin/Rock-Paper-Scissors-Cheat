@@ -85,7 +85,7 @@ class Consensor:
         if transaction not in self.candidate_set:
             self.candidate_set[transaction] = set()
             if self.would_be_valid(transaction):
-                self.candidate_set[transaction].add(self.account)
+                self.candidate_set[transaction].add(self.account.account_id)
 
     # Update the vote tally based on an incoming proposal
     def receive_proposal(self, proposal):
@@ -99,12 +99,12 @@ class Consensor:
     def start(self):
         logging.info("Starting!")
         self.voters_seen = dict() #key=voter id, value = stake in LCL
-        my_info = self.last_closed_ledger.get_account_info(self.account)
+        my_info = self.last_closed_ledger.get_account_info(self.account.account_id)
         if not my_info:
-            logging.error("Account does not exist: "+self.account)
+            logging.error("Account does not exist: "+self.account.account_id)
             return
         my_stake = my_info["stake"]
-        self.voters_seen[self.account] = my_stake
+        self.voters_seen[self.account.account_id] = my_stake
         self.total_stake = my_stake
 
         if self.timer: self.timer.stop()
@@ -119,7 +119,7 @@ class Consensor:
 """
 class Consensor:
     def __init__(self, account):
-        self.account = account
+        self.account.account_id = account
         self.periodic = None
         self.round_number = 0
         self.candidate_set = set()
@@ -185,7 +185,7 @@ def is_consistent(transaction, ledger, candidates):
 
 if __name__ == "__main__":
     def main():
-        c = Consensor("gEnEsIs_AcCoUnT_iD")
+        c = Consensor(ledger.GENESIS_ACCOUNT_ID)
         c.start()
 
     tornado.ioloop.IOLoop.instance().add_callback(main)
