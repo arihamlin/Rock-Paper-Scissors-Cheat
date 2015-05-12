@@ -1,0 +1,3 @@
+genesis: ZDRlNjg0ZDgyOGEyYTY5ZjY4MDYxZjhiYzZiYzFjNjJmZjlj
+defender: YjNhMzI2MGFmMWEyM2M4MGE5YTIzYzA2NzU0OTc4YjdjOGU4
+challenger: OTMwMmRhMzIwNTYwYmZmZmUzYzAwNzFiYjlmNGNiM2NkM2Vh
