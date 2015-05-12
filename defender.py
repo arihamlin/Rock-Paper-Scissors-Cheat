@@ -2,8 +2,11 @@ from client.client_logic import Player
 import Crypto.PublicKey.RSA as RSA
 import tornado
 import os
+from common.helpers import get_account_from_seed
 
-key = RSA.generate(1024, os.urandom)
-p1 = Player("127.0.0.1", 4243, key, "127.0.0.1", 10001)
+account = get_account_from_seed(2)
+print account
+
+p1 = Player("127.0.0.1", 4243, account, "127.0.0.1", 10001)
 
 tornado.ioloop.IOLoop.current().start()

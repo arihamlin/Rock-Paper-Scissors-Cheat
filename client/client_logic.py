@@ -22,9 +22,9 @@ import json
 
 
 class Player(tornado.tcpserver.TCPServer):
-    def __init__(self, server_ip, server_port, key, voter_relay_ip, voter_relay_port):
+    def __init__(self, server_ip, server_port, account, voter_relay_ip, voter_relay_port):
         tornado.tcpserver.TCPServer.__init__(self)
-        self.account = b.AccountIdentity(private_key=key)
+        self.account = account
         #initialize the server
         self.listen(server_port)
         self.voter_relay_ip = voter_relay_ip
