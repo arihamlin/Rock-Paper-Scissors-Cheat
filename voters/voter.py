@@ -51,7 +51,7 @@ class Voter(VoterNode):
                 "result": signed.serialize()
             })
         else:
-            # handle unknown client request
+            logging.info("GOT REQUEST:"+signed.payload.name)
             pass
 
     def on_voter_message(self, sender_id, msg):

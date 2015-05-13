@@ -205,6 +205,7 @@ class PlayerConnRequestHandler(object):
             
     def _post_request_to_voters(self, req):
         #talk to voters to determine the begin_by and end_by ledger numbers
+        print("POSTING TO VOTERS!!!"+str(req))
         client = tornado.httpclient.HTTPClient()
         r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=0",
                          method="POST", body=req.serialize())
