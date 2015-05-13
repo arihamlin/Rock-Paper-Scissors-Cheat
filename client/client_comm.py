@@ -17,7 +17,7 @@ import common.base as b
 import base64 
 import tornado.gen
 import json
-
+import logging
 
 WINS = {('R','S'): 0,
         ('R','P'): 1,
@@ -88,8 +88,13 @@ class PlayerConnRequestHandler(object):
         self.timeout_handle = tornado.ioloop.IOLoop.current(
             ).call_later(600, self.on_timeout)
         while True:
-            line = yield self.stream.read_until("\n")
-            self.on_line(line)
+            try:
+                line = yield self.stream.read_until("\n")
+                self.on_line(line)
+            except Exception, ex:
+                print("CONNECTION CLOSED!!")
+                logging.info("CONNECTION CLOSED!")
+                break
 
         # tornado.ioloop.IOLoop.current().remove_timeout(self.timeout_handle)
 
@@ -339,7 +344,7 @@ class PlayerConnRequestHandler(object):
         
         #checks to see if the defender posted correctly to close encounter
         account_state = yield self._get_account_state()
-        if account_state['in_encounter_with'] != '': #TODO may also want to check chain length 
+        if account_state.payload['in_encounter_with'] is not None: #account_state['in_encounter_with'] != '': #TODO may also want to check chain length 
             #post to the server to close the encounter 
             serialized_moves = "#".join([m.serialize() for m in self.moves])
             close_transaction = b.SignedStructure(b.CloseEncounter(
