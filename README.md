@@ -37,6 +37,11 @@ $ . ./venv/bin/activate
 $ pip install tornado bidict pycrypto enum34
 ```
 
+##### Initialize example ledger
+```
+$ cp ledger-example.db ledger.db
+```
+
 ##### Running components
 In a minimal setup, we need to run one relay, one voter and two clients. 
 
