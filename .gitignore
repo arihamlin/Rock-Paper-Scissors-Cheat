@@ -62,4 +62,4 @@ voters/ledger.db
 
 venv
 
-*.db
+ledger.db
