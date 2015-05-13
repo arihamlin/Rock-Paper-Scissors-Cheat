@@ -51,6 +51,11 @@ class Voter(VoterNode):
                 "result": signed.serialize()
             })
         else:
+            if signed.payload.name == "CloseEncounter":
+                import pickle
+                f = open("encounter.p", "wb")
+                pickle.dump(req, f)
+                f.close()
             logging.info("GOT REQUEST:"+signed.payload.name)
             pass
 
