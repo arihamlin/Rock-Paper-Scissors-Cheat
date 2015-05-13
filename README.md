@@ -1,5 +1,5 @@
 # Rock-Paper-Scissor-Cheat
-###Changping Chen, Ariel Hamlin, Jeffrey Lim, Manushaqe Muco
+(###Changping Chen, Ariel Hamlin, Jeffrey Lim, Manushaqe Muco)
 
 ### Components
 This project is composed of 3 individually running components: relay, voter, and client. 
