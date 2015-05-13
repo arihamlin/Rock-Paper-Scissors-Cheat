@@ -24,7 +24,7 @@ We represent users in our system using their unique public-keys. In addition, si
 
 We use PyCrypto implementation for the cryptographic primitives, including RSA encryption and digital signatures. For hash functions, we use Python's built-in hashlib module.
 
-Since no implemention for commitment scheme was readily available, we created our simple commitment scheme. In our design, a user concatnates the value to be commited with a 20-byte randomly generated padding, computes the SHA256 hash of the concatnated string as the commitment. To reveal the commitment, a user sends its commited value and previously generated padding to the verifier who computes the correct commitment the same way above and checks if it matches the previously received commitment. 
+Since no implementation for commitment scheme was readily available, we created our simple commitment scheme. In our design, a user concatenates the value to be committed with a 20-byte randomly generated padding, computes the SHA256 hash of the concatenated string as the commitment. To reveal the commitment, a user sends its committed value and previously generated padding to the verifier who computes the correct commitment the same way above and checks if it matches the previously received commitment. 
 
 Such commitment scheme should be computationally binding unless the pseudorandom number generator is flawed or the collection-resistance property of underlying hash function is broken. The oneway-ness of the hash function guarantees computationally hiding property.
 
