@@ -206,6 +206,8 @@ class PlayerConnRequestHandler(object):
     def _post_request_to_voters(self, req):
         #talk to voters to determine the begin_by and end_by ledger numbers
         print("POSTING TO VOTERS!!!"+str(req))
+        import pdb
+        pdb.set_trace()
         client = tornado.httpclient.HTTPClient()
         r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=0",
                          method="POST", body=req.serialize())
@@ -336,6 +338,7 @@ class PlayerConnRequestHandler(object):
                                                         challenger=transaction.account.account_id,
                                                         defender=self.account.account_id,
                                                         moves=serialized_moves))
+            close_transaction.sign(self.account)
             self._post_request_to_voters(close_transaction)
         
     @tornado.gen.coroutine
@@ -352,6 +355,7 @@ class PlayerConnRequestHandler(object):
                                                         challenger=transaction.account.account_id,
                                                         defender=self.account.account_id,
                                                         moves=serialized_moves))
+            close_transaction.sign(self.account)
             self._post_request_to_voters(close_transaction)
 
 

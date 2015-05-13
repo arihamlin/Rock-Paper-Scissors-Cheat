@@ -28,7 +28,7 @@ class Voter(VoterNode):
             })
 
     def on_message(self, sender_id, msg):
-        print msg
+        # print msg
         if "event" in msg and msg["event"] == "client_request":
             self.on_client_message(sender_id, msg)
         else:
@@ -55,6 +55,7 @@ class Voter(VoterNode):
             pass
 
     def on_voter_message(self, sender_id, msg):
+        
         self.consensor.process_transaction(msg)
 
     def on_close(self):
