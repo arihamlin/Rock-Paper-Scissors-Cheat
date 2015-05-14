@@ -107,7 +107,7 @@ class Consensor:
         for tx in self.candidate_set:
             final_proposal.add(tx)
             if str(tx.__class__) != "consensor.CoinstakeSummary":
-                total_fees += TRANSACTION_FEE #Don't include Coinstakes
+                total_fees += (2*TRANSACTION_FEE) #Don't include Coinstakes
         
         # For each voter that we saw, defer a Coinstake transaction
         # so that they get their share of the transaction fees.
@@ -139,25 +139,6 @@ class Consensor:
 
         # Determine reward by the "House of Representatives" method, breaking ties alphabetically
         transaction_count = len(final_proposal) # TODO: exclude coinstake transactions
-        reward_per_stake = float(transaction_count*TRANSACTION_FEE)/rewardable_stake
-        unallocated_reward = transaction_count*TRANSACTION_FEE
-        for rv in rewardable_voters:
-            reward = rv["stake"] * reward_per_stake
-            rv["reward"] = reward
-            rv["integer_reward"] = int(reward)
-            unallocated_reward -= int(reward)
-        rewardable_voters.sort(key=lambda x: x["voter_id"])
-        rewardable_voters.sort(key=lambda x: -x["reward"])
-        for rv in rewardable_voters:
-            if unallocated_reward:
-                rv["integer_reward"] += 1
-                unallocated_reward -= 1
-            else:
-                break
-
-        for rv in rewardable_voters:
-            coinstake = None #A tx to give rv["voter_id"] rv["integer_reward"]
-            deferrals.add(coinstake)
         """
 
         self.last_closed_ledger.apply_transactions(final_proposal)

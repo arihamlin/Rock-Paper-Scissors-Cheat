@@ -129,7 +129,8 @@ class Ledger():
 
 	def apply_transactions(self, txs):
 		coinstakes = set()
-		for tx in txs:
+		txs_sorted = sorted(list(txs), key = lambda t: t.id)
+		for tx in txs_sorted:
 			tx_type = str(tx.__class__)
 			logging.info("Applying "+tx_type+" transaction to the ledger...")
 			if tx_type == "consensor.InitiationSummary":
@@ -144,14 +145,43 @@ class Ledger():
 			else:
 				logging.info("Could not apply: unknown transaction type")
 
-
-		for cs in coinstakes:
-			pass
-
-		#update the ledger root and ledger hash
-		#ledger_number = self.get_ledger_root()["ledger_number"]
+		# There's a small bug here: If a transaction is dropped at the last minute,
+		# because it's inconsistent with another transaction that got sorted before
+		# it in txs_sorted, then the voters will still earn a fee at the next round
+		# as if the fee for the dropped transaction had been paid.
+		if len(coinstakes):
+			denominator = 0
+			total_fees = 0
+			for cs in coinstakes:
+				payee_stake = self.get_account_info(cs.payee)["stake"]
+				denominator += payee_stake
+				if total_fees is not 0:
+					assert total_fees == cs.total_fees # They should all be the same
+				total_fees = cs.total_fees
+			# Determine reward by "House of Representatives" method, breaking ties alphabetically.
+			reward_per_stake = float(total_fees)/denominator
+			unallocated_reward = total_fees
+	        rvs = list()
+	        for cs in coinstakes:
+	            reward = self.get_account_info(cs.payee)["stake"] * reward_per_stake
+	            rv = {"payee": cs.payee, "short_id": cs.short_id()}
+	            rv["reward"] = reward
+	            rv["integer_reward"] = int(reward)
+	            unallocated_reward -= int(reward)
+	            rvs.append(rv)
+	        rvs.sort(key=lambda x: x["payee"])
+	        rvs.sort(key=lambda x: -x["reward"])
+	        for rv in rvs:
+	            if unallocated_reward:
+	                rv["integer_reward"] += 1
+	                unallocated_reward -= 1
+	            else:
+	                break
+	        for rv in rvs:
+	        	self.pay_coinstake(rv) # Modifies the ledger
+		
+		# Update the ledger root and ledger hash
 		self.update_root_and_hash()
-		#self.save()
 
 
 	def initiate_encounter(self, summary):
@@ -167,7 +197,7 @@ class Ledger():
 			WHERE account_id=?''', (
 				challenger["stake"]-TRANSACTION_FEE,	# stake
 				defender["account_id"],					# in_encounter_with
-				challenger["current_ledger"],				# encounter_begin_at
+				challenger["current_ledger"],			# encounter_begin_at
 				summary.encounter_end_by,				# encounter_end_by
 				challenger["account_id"]
 			)
@@ -223,6 +253,18 @@ class Ledger():
 		self.conn.commit()
 		logging.info("Applied CloseEncounter "+summary.short_id()+" to the ledger.")
 
+
+	def pay_coinstake(self, rv):
+		# pay rv["integer_reward"] to rv["payee"]
+		payee = self.get_account_info(rv["payee"])
+		c = self.conn.cursor()
+		c.execute('''UPDATE ledger_main SET
+			stake=?
+			WHERE account_id=?''',
+			(payee["stake"]+rv["integer_reward"], payee["account_id"])
+		)
+		self.conn.commit()
+		logging.info("Applied CoinStake "+rv["short_id"]+" to the ledger.")
 
 
 	def update_root_and_hash(self):
