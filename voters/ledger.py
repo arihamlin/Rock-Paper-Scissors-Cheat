@@ -47,10 +47,6 @@ class Ledger():
 			initalize_database(self.conn)
 			self.make_genesis()
 
-	# Write to the database
-	#def save(self):
-	#	pass
-
 	def make_genesis(self):
 		c = self.conn.cursor()
 		print "Making genesis"
@@ -62,7 +58,6 @@ class Ledger():
 		c.execute("INSERT INTO ledger_root VALUES (?,?,?)", ("", 0, ""))
 		c.execute("INSERT INTO ledger_hash VALUES (?)", ("",))
 		self.conn.commit()
-		#self.conn.close()
 		self.update_root_and_hash()
 
 	# Is a given InitiateEncounter summary valid, with respect to this ledger?
@@ -70,21 +65,14 @@ class Ledger():
 		# If they can afford the transaction fees, they're not already in encounters, and it's not too early or late.
 		challenger = self.get_account_info(summary.challenger)
 		defender = self.get_account_info(summary.defender)
-
-
-
 		if challenger["stake"] < TRANSACTION_FEE or defender["stake"] < TRANSACTION_FEE:
 			return False
-
 		if challenger["in_encounter_with"] or defender["in_encounter_with"]:
 			return False
-
 		if challenger["current_ledger"] > summary.encounter_begin_by:
 			return False
-
 		if challenger["current_ledger"] > summary.encounter_end_by:
 			return False
-
 		return True
 
 	# Is a given encounter summary valid?
@@ -94,32 +82,24 @@ class Ledger():
 		# 2. that they're currently in an encounter with each other
 		# 3. that it's not too early
 		# 4. that it's not too late
-
 		winner = self.get_account_info(summary.winner)
 		loser = self.get_account_info(summary.loser)
-
 		# Step 1
 		if winner["stake"] < TRANSACTION_FEE or loser["stake"] < TRANSACTION_FEE:
 			return False
-
-		# Step 2
-		# commented out because we haven't set these values yet
-		
+		# Step 2		
 		if (not winner["in_encounter_with"] or
 			not loser["in_encounter_with"] or
 			winner["in_encounter_with"] != summary.loser or
 			loser["in_encounter_with"] != summary.winner
 		):
 			return False
-
 		# Step 3
 		if winner["encounter_begin_at"] > winner["current_ledger"]:
 			return False
-
 		# Step 4
 		if winner["encounter_end_by"] < winner["current_ledger"]:
 			return False
-		
 		return True
 
 	def is_valid_coinstake_summary(self, css):
@@ -127,8 +107,10 @@ class Ledger():
 		# if they're not approved in the very next ledger
 		return self.get_ledger_root()["ledger_number"] == 1 + css.for_voting_on_changes_to_ledger_number
 
+	# Take a set of transactions and apply them to the ledger one by one.
 	def apply_transactions(self, txs):
 		coinstakes = set()
+		# The transactions must be sorted first, so that all voters apply them in the same order
 		txs_sorted = sorted(list(txs), key = lambda t: t.id)
 		for tx in txs_sorted:
 			tx_type = str(tx.__class__)
@@ -143,12 +125,17 @@ class Ledger():
 				if self.is_valid_coinstake_summary(tx):
 					coinstakes.add(tx)					
 			else:
+				# An unknown transaction type should never have made it this far, but just in case...
 				logging.info("Could not apply: unknown transaction type")
 
-		# There's a small bug here: If a transaction is dropped at the last minute,
-		# because it's inconsistent with another transaction that got sorted before
-		# it in txs_sorted, then the voters will still earn a fee at the next round
-		# as if the fee for the dropped transaction had been paid.
+		"""
+		There's a small bug here: If a transaction is dropped at the last minute,
+		because it's inconsistent with another transaction that got sorted before
+		it in txs_sorted, then the voters will still earn a fee at the next round
+		as if the fee for the dropped transaction had been paid.
+		"""
+
+		# Calculate transaction fees
 		if len(coinstakes):
 			denominator = 0
 			total_fees = 0
@@ -158,7 +145,8 @@ class Ledger():
 				if total_fees is not 0:
 					assert total_fees == cs.total_fees # They should all be the same
 				total_fees = cs.total_fees
-			# Determine reward by "House of Representatives" method, breaking ties alphabetically.
+			# Determine reward by "House of Representatives" method, breaking ties alphabetically
+			# (since the reward has to be an integer)
 			reward_per_stake = float(total_fees)/denominator
 			unallocated_reward = total_fees
 	        rvs = list()
@@ -183,7 +171,7 @@ class Ledger():
 		# Update the ledger root and ledger hash
 		self.update_root_and_hash()
 
-
+	# Write an InitiateEncounter transaction into the ledger
 	def initiate_encounter(self, summary):
 		challenger = self.get_account_info(summary.challenger)
 		defender = self.get_account_info(summary.defender)
@@ -202,7 +190,6 @@ class Ledger():
 				challenger["account_id"]
 			)
 		)
-
 		c.execute('''UPDATE ledger_main SET
 			stake=?,
 			in_encounter_with=?,
@@ -218,8 +205,7 @@ class Ledger():
 		)
 		logging.info("Applied InitiateEncounter "+summary.short_id()+" to the ledger.")
 
-
-
+	# Write a CloseEncounter transaction into the ledger
 	def close_encounter(self, summary):
 		winner = self.get_account_info(summary.winner)
 		loser = self.get_account_info(summary.loser)
@@ -253,7 +239,7 @@ class Ledger():
 		self.conn.commit()
 		logging.info("Applied CloseEncounter "+summary.short_id()+" to the ledger.")
 
-
+	# Write a Coinstake transaction into the ledger
 	def pay_coinstake(self, rv):
 		# pay rv["integer_reward"] to rv["payee"]
 		payee = self.get_account_info(rv["payee"])
@@ -266,31 +252,25 @@ class Ledger():
 		self.conn.commit()
 		logging.info("Applied CoinStake "+rv["short_id"]+" to the ledger.")
 
-
+	# Update the bookkeeping data that's used to keep track of each ledger.
 	def update_root_and_hash(self):
 		c = self.conn.cursor()
 		hashes = ""
 		for entry in c.execute("SELECT * FROM ledger_main ORDER BY account_id"):
-			entry_hash = hashlib.sha256(str(entry)).hexdigest() #something from entry
+			entry_hash = hashlib.sha256(str(entry)).hexdigest()
 			hashes += entry_hash
 		merkle_root = hashlib.sha256(hashes).hexdigest()
 		# This is not actually a Merkle tree; but the ledger isn't so big that we need that.
 		ledger_number = 1+self.get_ledger_root()["ledger_number"]
 		previous_hash = self.get_ledger_hash()
-
-		
-
 		c.execute("UPDATE ledger_root SET merkle_root=?, ledger_number=?, previous_hash=?",
 			(merkle_root, ledger_number, previous_hash))
-
 		new_ledger_hash = hashlib.sha256(str(self.get_ledger_root())).hexdigest()
 		logging.info("Updating ledger hash: "+new_ledger_hash[0:9]+"...")
 		c.execute("UPDATE ledger_hash SET ledger_hash=?", (new_ledger_hash,))
 		self.conn.commit()
 
-		#self.conn.close()
-
-
+	# Get an account's data from the ledger
 	def get_account_info(self, account_id):
 		c = self.conn.cursor()
 		c.execute("SELECT * FROM ledger_main WHERE account_id = ?", (account_id,))
@@ -320,6 +300,7 @@ class Ledger():
 		return result
 
 
+# Create a new database, if there isn't already one on disk
 def initalize_database(conn):
 	c = conn.cursor()
 
@@ -345,16 +326,15 @@ def initalize_database(conn):
 	)''')
 
 	conn.commit()
-	#conn.close()
 
 
 
 import math
-
 """
-d = 1/( 1 + exp(W-L) )
-W' = W + d
-L' = L - d
+The skill change formula:
+	d = 1/( 1 + exp(W-L) )
+	W' = W + d
+	L' = L - d
 """
 def skill_change(winner_skill, loser_skill):
 	k = 1000

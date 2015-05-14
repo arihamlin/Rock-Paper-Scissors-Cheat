@@ -52,7 +52,6 @@ class Voter(VoterNode):
 
         req = msg["request"].decode("base64")
         signed = SignedStructure.deserialize(req)
-        #print "Client request: ", signed
         if signed.payload.name == "QueryState":
             query_account_id = signed.payload.account_id
             info = self.consensor.last_closed_ledger.get_account_info(query_account_id)
@@ -64,16 +63,13 @@ class Voter(VoterNode):
                 "result": signed.serialize()
             })
         else:
-            #logging.info("GOT REQUEST:"+signed.payload.name)
             self.consensor.consider_transaction(signed)
 
     def on_voter_message(self, sender_id, msg):
-        #logging.info("GOT MESSAGE FROM OTHER VOTER:"+str(sender_id)+":"+str(msg))
         self.consensor.process_voter_message(sender_id, msg)
 
     def on_close(self):
         VoterNode.on_close(self)
-        # clean up
 
 
 if __name__ == "__main__":
