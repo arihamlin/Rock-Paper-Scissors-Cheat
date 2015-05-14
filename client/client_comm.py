@@ -131,7 +131,11 @@ class PlayerConnRequestHandler(object):
             self.resolve_game(transaction)
 
     def on_timeout(self):
-        #TODO - deal with ragequit case (timeout)
+        # TODO - deal with ragequit case (timeout)
+        
+        # In proper implementations, the client needs to submit
+        # the partial game proof to voters. The code does not
+        # handle this case.
         pass
 
     def _get_player_input(self, prompt): 
