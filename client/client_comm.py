@@ -29,6 +29,10 @@ WINS = {('R','S'): 0,
         ('S','P'): 1,
         ('S','S'): -1}
 
+def print_debug(*args, **kwargs):
+    # print(*args, **kwargs)
+    pass
+
 class CommunicationException(Exception):
     pass
 
@@ -80,11 +84,11 @@ class PlayerConnRequestHandler(object):
 
     def send_data(self, s):
         self.stream.write(base64.b64encode(s) + "\n")
-        print("Sent data: " + s)
+        print_debug("Sent data: " + s)
 
     @tornado.gen.coroutine
     def start(self):
-        print("Start")
+        print_debug("Start")
         self.timeout_handle = tornado.ioloop.IOLoop.current(
             ).call_later(600, self.on_timeout)
         while True:
@@ -92,7 +96,7 @@ class PlayerConnRequestHandler(object):
                 line = yield self.stream.read_until("\n")
                 self.on_line(line)
             except Exception, ex:
-                print("CONNECTION CLOSED!!")
+                print_debug("CONNECTION CLOSED!!")
                 logging.info("CONNECTION CLOSED!")
                 break
 
@@ -100,7 +104,7 @@ class PlayerConnRequestHandler(object):
 
     def on_line(self, line):
         data = base64.b64decode(line)
-        print("Received data: " + data)
+        print_debug("Received data: " + data)
         req = int(data.split('#')[0])        
         payload = data.split('#')[1]
         
@@ -127,7 +131,11 @@ class PlayerConnRequestHandler(object):
             self.resolve_game(transaction)
 
     def on_timeout(self):
-        #TODO - deal with ragequit case (timeout)
+        # TODO - deal with ragequit case (timeout)
+        
+        # In proper implementations, the client needs to submit
+        # the partial game proof to voters. The code does not
+        # handle this case.
         pass
 
     def _get_player_input(self, prompt): 
@@ -158,7 +166,7 @@ class PlayerConnRequestHandler(object):
     
     def _commit_turn(self, prev):
         #Get player input for turn
-        turn = self._get_player_input("What would you like to play - Rock(R), Paper(P), Scissors(S) ")
+        turn = self._get_player_input("What would you like to play - Rock(R), Paper(P), Scissors(S) ").upper()
     
         #sanitize user input
         if turn not in ['R','P','S']:
@@ -205,9 +213,7 @@ class PlayerConnRequestHandler(object):
             
     def _post_request_to_voters(self, req):
         #talk to voters to determine the begin_by and end_by ledger numbers
-        print("POSTING TO VOTERS!!!"+str(req))
-        #import pdb
-        #pdb.set_trace()
+        print_debug("POSTING TO VOTERS!!!"+str(req))
         client = tornado.httpclient.HTTPClient()
         r = client.fetch("http://"+str(self.voter_relay_ip)+":"+str(self.voter_relay_port)+"/?nnodes=1&nresponses=0",
                          method="POST", body=req.serialize())
@@ -256,7 +262,7 @@ class PlayerConnRequestHandler(object):
         #Wait until can get encounter_start at 
         #TODO: actually check this value
         account_state = yield self._get_account_state()
-        print(account_state)
+        print_debug(account_state)
         encounter_start_at = account_state.payload['encounter_begin_at']
         
         #get player turn and get the commitment 

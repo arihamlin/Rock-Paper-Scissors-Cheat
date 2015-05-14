@@ -21,12 +21,30 @@ def generate_node_id():
 NODE_ID_LENGTH = 16
 
 """
+# Classes:
+
 P2PNetworkRelay is a TCP server that forwards message from one
-client to all other clients. This is to simulate a stable 
+voter to all other voters. This is to simulate a stable 
 decentralized peer-to-peer network.
 
 VoterNode is a node on simulated P2P network and connects to a 
-relay. 
+relay. It provides a "on_message" callback used by Voter.
+
+VoterInterfaceProxy is an HTTP server that forwards messages
+received from clients to specifide number of voters. It has
+an option of waiting for a number of responses. Clients use
+this interface to query AccountState from voters and post
+game result. Check voter_interface_ex.py for usage.
+
+# Implementation details
+
+"Node ID" is independent of account ID. It's used by Relay to
+identity individual nodes on the network. It's randomly generated
+when nodes connect to relay.
+
+Messages passed in the simulated P2P network are prefixed by
+their (1) message type (one-byte constant below) and size 
+(two-bytes big-endian fixed header). 
 """
 
 TYPE_BROADCAST = 1
@@ -48,7 +66,6 @@ class P2PNetworkRelay(tornado.tcpserver.TCPServer):
             "request": msg.encode("base64"),
             "event": "client_request"
         })
-        print data
         items = self.nodes.items()
         random.shuffle(items)
         for _, stream in items[:nnodes]:
@@ -186,7 +203,6 @@ class VoterInterfaceProxy(tornado.web.RequestHandler):
         # nresponses = number of responses to wait from voters
         nnodes = int(self.get_argument("nnodes", 1))
         self.nresponses = int(self.get_argument("nresponses", 0))
-        print self.nresponses
         if self.nresponses == 0:
             self.relay.send_message(nnodes, self.request.body, None)
             self.finish()

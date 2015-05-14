@@ -40,22 +40,28 @@ def verify_encounter(encounter):
             if not move.verifySignature(defender):
                 msg = "Move #%i not signed by defender." % idx
                 return (False, None, None, msg)
-        else:
+        else:  # from challenger
             if not move.verifySignature(challenger):
                 msg = "Move #%i not signed by challenger." % idx
                 return (False, None, None, msg)
 
+        # Check proper chaining
         if idx > 1:
             if signed_moves[idx - 1].signature != move.payload.prev:
                 msg = "Move #%i does not have correct previous signature." % idx
                 return (False, None, None, msg)
 
+        # Check move type
         if move.payload.name != move_types[idx]:
             msg = "Move #%i should be %s." % (idx, move_types[idx])
             return (False, None, None, msg)
 
     round_idx = 0
     def compute_round_result(round_idx):
+        """
+        Check and verify commiments from both players and return the game result
+        in a round specified by the index in moves.
+        """
         defender_commitment = Commitment.deserialize(moves[round_idx].commitment)
         challenger_commitment = Commitment.deserialize(moves[round_idx+1].commitment)
         defender_reveal = moves[round_idx+2]

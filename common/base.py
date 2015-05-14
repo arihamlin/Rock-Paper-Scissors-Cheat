@@ -10,6 +10,25 @@ import Crypto.PublicKey.RSA as RSA
 
 KEY_SIZE = 2048
 
+"""
+All messages between clients and clients, clients and voters
+are stored using subclasses of BaseStructure. BaseStructure
+of each message type declares a list of required data fields
+and supports type-aware serialization and deserialization. 
+
+SignedStructure is a container of BaseStructure and stores
+additional metadata such as account and signature associated
+with a BaseStructure. Almost all messages are wrapped in a
+SignedStructure since digital signatures are required throughout
+the game. 
+
+AccountIdentity is a special BaseStructure. It stores the
+account ID (48 characters) and public key of a user. Optionally,
+when used by the account owner, it stores the private key as well.
+When private key exists, it can be used to sign a BaseStructure
+using a SignedStructure.
+"""
+
 
 class BaseStructure(object):
     name = "BaseStructure"
