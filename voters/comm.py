@@ -48,7 +48,6 @@ class P2PNetworkRelay(tornado.tcpserver.TCPServer):
             "request": msg.encode("base64"),
             "event": "client_request"
         })
-        print data
         items = self.nodes.items()
         random.shuffle(items)
         for _, stream in items[:nnodes]:
@@ -186,7 +185,6 @@ class VoterInterfaceProxy(tornado.web.RequestHandler):
         # nresponses = number of responses to wait from voters
         nnodes = int(self.get_argument("nnodes", 1))
         self.nresponses = int(self.get_argument("nresponses", 0))
-        print self.nresponses
         if self.nresponses == 0:
             self.relay.send_message(nnodes, self.request.body, None)
             self.finish()
