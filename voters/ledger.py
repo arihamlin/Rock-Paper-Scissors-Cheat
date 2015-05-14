@@ -70,9 +70,11 @@ class Ledger():
 		challenger = self.get_account_info(summary.challenger)
 		defender = self.get_account_info(summary.defender)
 
+
+
 		if challenger["stake"] < TRANSACTION_FEE or defender["stake"] < TRANSACTION_FEE:
 			return False
-
+		
 		if challenger["in_encounter_with"] or defender["in_encounter_with"]:
 			return False
 

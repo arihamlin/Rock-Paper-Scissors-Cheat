@@ -1,5 +1,6 @@
 import tornado.ioloop
 import tornado.log
+import pickle
 import ledger
 import logging
 from verify import verify_encounter, verify_initiation
@@ -12,45 +13,15 @@ TRANSACTION_FEE = ledger.TRANSACTION_FEE
 
 tornado.log.enable_pretty_logging()
 
-class InitiationSummary:
-    def __init__(self, id, challenger, defender, encounter_end_by): #etc
-        self.id = id
-        self.challenger = challenger
-        self.defender = defender
-        self.encounter_end_by = encounter_end_by
-    def short_id(self):
-        return self.id[1:9] + "..."
-        
-class EncounterSummary:
-    def __init__(self, id, winner, loser, was_tied):
-        self.id = id
-        self.winner = winner
-        self.loser = loser
-        self.was_tied = was_tied
-    def short_id(self):
-        return self.id[1:9] + "..."
-    def __str__(self):
-        return str({
-            "id": self.id,
-            "winner": self.winner,
-            "loser": self.loser,
-            "was_tied": self.was_tied
-        })
-
-class CoinstakeSummary:
-    def __init__(self, id, payee, total_fees):
-        self.id = id
-        self.payee = payee
-        self.total_fees = total_fees
-
-
 class Consensor:
-    def __init__(self, account):
+    def __init__(self, voter, account):
+        self.voter = voter # The Voter instance that owns this
         self.account = account # Our own account in the ledger
-        self.last_closed_ledger = ledger.Ledger("ledger.db") # Initialize from database on disk
+        self.last_closed_ledger = ledger.Ledger("ledger_"+self.account.account_id[0:6]+".db") # Initialize from database on disk
         self.candidate_set = set() # Transactions that we're voting for
         self.deferral_set = set() # Transactions that didn't get enough votes, but will be considered for the next ledger
         self.round_number = 0 # Which stage we're in in the consensus process
+        self.votes_heard = dict() # Votes that we've received so far (not including our own)
         self.timer = None
 
     # Tally up the votes, submit my proposal, and advance the round number
@@ -59,13 +30,67 @@ class Consensor:
         if threshold == 0:
             logging.info("Listening for transactions...")
         else:
-            logging.info("Advancing txs with >" + str(threshold) + " votes")
-            # update candidate_set; defer txs with insufficient votes
+            logging.info("Advancing txs with >" + str(threshold) + " of the votes")
+
+            # Count up the votes
+            transaction_map = dict()
+            tally = dict()
+            total_stake = 0
+
+            # Start with our own vote...
+            our_candidate_set = set(self.candidate_set)
+            our_stake = self.last_closed_ledger.get_account_info(self.account.account_id)["stake"]
+            total_stake += our_stake
+            for tx in our_candidate_set:
+                transaction_map[tx.id] = tx
+                tally[tx.id] = our_stake
+
+            # ...and then count the others:
+            for voter in self.votes_heard:
+                their_candidate_set = self.votes_heard[voter]
+                them = self.last_closed_ledger.get_account_info(voter)
+                if not them:
+                    logging.info("Voter has no stake; ignoring:"+voter)
+                    continue
+                their_stake = them["stake"]
+                for tx in their_candidate_set:
+                    transaction_map[tx.id] = tx
+                    if tx.id in tally: tally[tx.id] += their_stake
+                    else: tally[tx.id] = their_stake
+
+            # See which ones passed the threshold
+            absolute_threshold = int(total_stake * threshold)
+            new_candidate_set = set()
+
+            for txid in tally:
+                tx = transaction_map[txid]
+                if tally[txid] >= absolute_threshold:
+                    logging.info("Adding to candidate set tx "+tx.short_id())
+                    new_candidate_set.add(tx)
+                else:
+                    logging.info("Not enough votes; deferring tx "+tx.short_id())
+                    self.deferral_set.add(tx)
+
+            self.candidate_set = new_candidate_set
+
         if self.round_number == NUMBER_OF_ROUNDS-1:
             self.finalize_ledger(threshold)
         else:
-            # submit my votes
+            # submit my vote
+            self.send_voter_message({
+                "proposal": pickle.dumps(self.candidate_set)
+            })
             self.round_number += 1
+            #logging.info("SENT VOTE")
+            """
+            import random
+            val = "Hello world!"+str(random.randint(0, 10000000))
+            logging.info("SENDING VOTER_MESSAGE:"+val)
+            self.send_voter_message({
+                "payload": val
+            })
+            """
+            
 
 
     def finalize_ledger(self, threshold):
@@ -120,6 +145,7 @@ class Consensor:
         # This round's deferrals become the next round's candidates
         self.candidate_set = self.deferral_set
         self.deferral_set = set()
+        self.votes_heard = dict()
 
         self.last_closed_ledger.apply_transactions(final_proposal)
 
@@ -161,25 +187,40 @@ class Consensor:
             logging.info("Discarding transaction of unknown type")
 
 
+    """
     # Update the vote tally based on an incoming proposal
     def receive_proposal(self, proposal):
         pass
         #Update voters_seen and total_stake, if necessary
+    """
 
-    # Check if a transaction is consistent with the LCL and the CS
-    def would_be_valid(self, transaction):
-        return True
+    # Send a message to the other voters
+    def send_voter_message(self, msg):
+        self.voter.send_voter_message(msg)
+
+    # Whenever we get a message from another voter
+    def process_voter_message(self, sender_id, msg):
+        #logging.info("CONSENSOR GOT VOTER_MESSAGE FROM:"+str(sender_id)+": "+str(msg))
+        if "proposal" in msg: # It's a vote
+            sender_account_id = msg["account_id"]
+            their_proposal = pickle.loads(msg["proposal"])
+            #logging.info("RECEIVED VOTE")
+            # At this point we should check to make sure that the signature on the message is genuine.
+            self.votes_heard[sender_account_id] = their_proposal
+        else:
+            logging.info("Could not understand voter message; dropping")
+
 
     def start(self):
         logging.info("Starting new consensus round")
-        self.voters_seen = dict() #key=voter id, value = stake in LCL
+        #self.voters_seen = dict() #key=voter id, value = stake in LCL
         my_info = self.last_closed_ledger.get_account_info(self.account.account_id)
         if not my_info:
             logging.error("Account does not exist: "+self.account.account_id)
             return
         my_stake = my_info["stake"]
-        self.voters_seen[self.account.account_id] = my_stake
-        self.total_stake = my_stake
+        #self.voters_seen[self.account.account_id] = my_stake
+        #self.total_stake = my_stake
 
         if self.timer: self.timer.stop()
         self.round_number = 0
@@ -190,72 +231,41 @@ class Consensor:
         if self.timer: self.timer.stop()
 
 
-"""
-class Consensor:
-    def __init__(self, account):
-        self.account.account_id = account
-        self.periodic = None
-        self.round_number = 0
-        self.candidate_set = set()
-        self.rejection_set = set()
-        self.deferral_set = set()
-        self.seen_transactions = set()
-        self.last_closed_ledger = None #Read from database
-
-    def consider_transaction(self, tx):
-        pass
-        # Is the transaction validly formed and signed?
-        if not tx.is_valid():
-            reject_transaction(tx)
-        if not is_consistent(tx, last_closed_ledger, candidate_set):
-            reject_transaction(tx)
-        else:
-            accept_transaction(tx)
 
 
+class InitiationSummary:
+    def __init__(self, id, challenger, defender, encounter_end_by): #etc
+        self.id = id
+        self.challenger = challenger
+        self.defender = defender
+        self.encounter_end_by = encounter_end_by
+    def short_id(self):
+        return self.id[1:9] + "..."
+
+class EncounterSummary:
+    def __init__(self, id, winner, loser, was_tied):
+        self.id = id
+        self.winner = winner
+        self.loser = loser
+        self.was_tied = was_tied
+    def short_id(self):
+        return self.id[1:9] + "..."
+    def __str__(self):
+        return str({
+            "id": self.id,
+            "winner": self.winner,
+            "loser": self.loser,
+            "was_tied": self.was_tied
+        })
+
+class CoinstakeSummary:
+    def __init__(self, id, payee, total_fees):
+        self.id = id
+        self.payee = payee
+        self.total_fees = total_fees
 
 
-    def reject_transaction(self, tx):
-        self.rejection_set.add(tx)
-        self.publish_vote(tx, False, 0)
 
-    def accept_transaction(self, tx):
-        self.candidate_set.add(tx)
-        self.publish_vote(tx, True, 0)
-
-    # tx = the transaction we're voting on
-    # vote = True or False, we're voting yes or no
-    # round = integer, the round number we're voting on (0, 1, 2, 3)
-    def publish_vote(self, tx, vote, round):
-        pass
-
-    def update_round_number(self):
-        self.round_number = (self.round_number + 1) % 4
-
-    def start(self):
-        if self.periodic: self.periodic.stop()
-        self.round_number = 0
-        self.periodic = tornado.ioloop.PeriodicCallback(self.update_round_number, 1000)
-        self.periodic.start()
-        # listen for transactions, and vote; listen for round 0 votes
-        # listen for round 1 votes
-        # listen for round 2 votes
-        # listen for round 3 votes
-        # sign final set, broadcast, and update ledger
-
-    def process_transaction(self, tx):
-        if self.round_number == 0:
-            self.consider_transaction(tx)
-        elif self.round_number == 1:
-            pass
-        elif self.round_number == 2:
-            pass
-        elif self.round_number == 3:
-            pass
-"""
-
-def is_consistent(transaction, ledger, candidates):
-    return True
 
 if __name__ == "__main__":
     def main():

@@ -18,7 +18,7 @@ class Voter(VoterNode):
         VoterNode.__init__(self, relay_host)
         self.account = get_account_from_seed(seed)
         self.account_id = self.account.account_id
-        self.consensor = Consensor(self.account)
+        self.consensor = Consensor(self, self.account)
         self.consensor.start()
 
     def on_connect(self):
@@ -34,10 +34,16 @@ class Voter(VoterNode):
         else:
             self.on_voter_message(sender_id, msg)
 
+    def send_voter_message(self, msg):
+        msg["event"] = "voter_message"
+        msg["account_id"] = self.account_id
+        self.broadcast_message(msg)
+
+
     def on_client_message(self, sender_id, msg):
         req = msg["request"].decode("base64")
         signed = SignedStructure.deserialize(req)
-        print "Client request: ", signed
+        #print "Client request: ", signed
         if signed.payload.name == "QueryState":
             # FIXME: use DB to return result
             query_account_id = signed.payload.account_id
@@ -61,8 +67,8 @@ class Voter(VoterNode):
             pass
 
     def on_voter_message(self, sender_id, msg):
-        
-        self.consensor.process_transaction(msg)
+        #logging.info("GOT MESSAGE FROM OTHER VOTER:"+str(sender_id)+":"+str(msg))
+        self.consensor.process_voter_message(sender_id, msg)
 
     def on_close(self):
         VoterNode.on_close(self)
