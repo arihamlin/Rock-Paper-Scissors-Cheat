@@ -2,6 +2,18 @@ import sys, os.path
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 from common.base import SignedStructure, Commitment
 import base64
+import logging
+
+def verify_initiation(initiation):
+    logging.info("verify_initiation:"+str(initiation))
+    #<challenger=u'OTMwMmRhMzIwNTYwYmZmZmUzYzAwNzFiYjlmNGNiM2NkM2Vh', defender=u'xxxx', begin_by=2, end_by=602, challenger_sign=[123]>
+    challenger = initiation.challenger
+    defender = initiation.defender
+    encounter_end_by = initiation.end_by
+    if False: #If the signature verification fails
+        return (False, None, None, None)
+    else:
+        return (True, challenger, defender, encounter_end_by)
 
 def verify_encounter(encounter):
     # returns (verification result, winner, loser, msg)
@@ -86,7 +98,7 @@ def verify_encounter(encounter):
     result = (r1[0] + r2[0] + r3[0], r1[1] + r2[1] + r3[1])
 
     if result[0] == result[1]:
-        return (True, challenger, defender, "It was a tie!")
+        return (True, challenger, defender, "It was a tie!") #Do not change this string
 
     if result[0] > result[1]:
         return (True, defender, challenger, "Defender wins!")

@@ -67,6 +67,18 @@ class Ledger():
 	# Is a given InitiateEncounter summary valid, with respect to this ledger?
 	def is_valid_initiation_summary(self, summary):
 		# If they can afford the transaction fees, they're not already in encounters, and it's not too late.
+		challenger = self.get_account_info(summary.challenger)
+		defender = self.get_account_info(summary.defender)
+
+		if challenger["stake"] < TRANSACTION_FEE or defender["stake"] < TRANSACTION_FEE:
+			return False
+
+		if challenger["in_encounter_with"] or defender["in_encounter_with"]:
+			return False
+
+		if challenger["current_ledger"] > summary.encounter_end_by:
+			return False
+
 		return True
 
 	# Is a given encounter summary valid?
@@ -105,11 +117,9 @@ class Ledger():
 		return True
 
 	def apply_transactions(self, txs):
-		pass
 		for tx in txs:
 			tx_type = str(tx.__class__)
 			logging.info("Applying "+tx_type+" transaction to the ledger...")
-			pass #do stuff
 			if tx_type == "consensor.InitiationSummary":
 				if self.is_valid_initiation_summary(tx):
 					self.initiate_encounter(tx) # Modifies the ledger
@@ -126,6 +136,43 @@ class Ledger():
 		#ledger_number = self.get_ledger_root()["ledger_number"]
 		self.update_root_and_hash()
 		#self.save()
+
+
+	def initiate_encounter(self, summary):
+		challenger = self.get_account_info(summary.challenger)
+		defender = self.get_account_info(summary.defender)
+		
+		c = self.conn.cursor()
+		c.execute('''UPDATE ledger_main SET
+			stake=?,
+			in_encounter_with=?,
+			encounter_begin_at=?,
+			encounter_end_by=?
+			WHERE account_id=?''', (
+				challenger["stake"]-TRANSACTION_FEE,	# stake
+				defender["account_id"],					# in_encounter_with
+				challenger["current_ledger"],				# encounter_begin_at
+				summary.encounter_end_by,				# encounter_end_by
+				challenger["account_id"]
+			)
+		)
+
+		c.execute('''UPDATE ledger_main SET
+			stake=?,
+			in_encounter_with=?,
+			encounter_begin_at=?,
+			encounter_end_by=?
+			WHERE account_id=?''', (
+				defender["stake"]-TRANSACTION_FEE,		# stake
+				challenger["account_id"],				# in_encounter_with
+				defender["current_ledger"],				# encounter_begin_at
+				summary.encounter_end_by,				# encounter_end_by
+				defender["account_id"]
+			)
+		)
+		logging.info("Applied InitiateEncounter "+summary.short_id()+" to the ledger.")
+
+
 
 	def close_encounter(self, summary):
 		winner = self.get_account_info(summary.winner)
@@ -158,7 +205,7 @@ class Ledger():
 			(new_loser_skill, loser["stake"]-TRANSACTION_FEE, loser["account_id"])
 		)
 		self.conn.commit()
-		logging.info("Applied transaction "+summary.short_id()+" to the ledger.")
+		logging.info("Applied CloseEncounter "+summary.short_id()+" to the ledger.")
 
 
 

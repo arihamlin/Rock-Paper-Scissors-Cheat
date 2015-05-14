@@ -2,7 +2,7 @@ import tornado.ioloop
 import tornado.log
 import ledger
 import logging
-from verify import verify_encounter
+from verify import verify_encounter, verify_initiation
 
 ROUND_TIME = 1000 # milliseconds
 VOTING_THRESHOLDS = [0, 0, 0.5, 0.6, 0.7, 0.8]
@@ -13,9 +13,14 @@ TRANSACTION_FEE = ledger.TRANSACTION_FEE
 tornado.log.enable_pretty_logging()
 
 class InitiationSummary:
-    def __init__(self, id, challenger, defender): #etc
-        pass
-
+    def __init__(self, id, challenger, defender, encounter_end_by): #etc
+        self.id = id
+        self.challenger = challenger
+        self.defender = defender
+        self.encounter_end_by = encounter_end_by
+    def short_id(self):
+        return self.id[1:9] + "..."
+        
 class EncounterSummary:
     def __init__(self, id, winner, loser, was_tied):
         self.id = id
@@ -124,7 +129,19 @@ class Consensor:
     def consider_transaction(self, transaction):
         logging.info("Received transaction of type: "+transaction.payload.name)
         if transaction.payload.name == "PostInitiateEncounter":
-            pass #initiate the encounter
+            verification = verify_initiation(transaction.payload)
+            if verification[0]: #If the transaction is internally valid
+                summary = InitiationSummary(
+                    id = str(transaction.signature),
+                    challenger = verification[1],
+                    defender = verification[2],
+                    encounter_end_by = verification[3]
+                )
+                if self.last_closed_ledger.is_valid_initiation_summary(summary): #If the transaction is externally valid
+                    logging.info("Adding InitiateEncounter with id=" + summary.short_id() + "... to candidate set")
+                    self.candidate_set.add(summary)
+                else:
+                    logging.info("Discarding InitiateEncounter transaction inconsistent with ledger")
         elif transaction.payload.name == "CloseEncounter":
             verification = verify_encounter(transaction.payload)
             #logging.info("Verification: "+str(verification))
@@ -136,7 +153,7 @@ class Consensor:
                     was_tied = (verification[3] == "It was a tie!")
                 )
                 if self.last_closed_ledger.is_valid_encounter_summary(summary): #If the transaction is externally valid
-                    logging.info("Adding transaction with id=" + summary.short_id() + "... to candidate set")
+                    logging.info("Adding CloseEncounter with id=" + summary.short_id() + "... to candidate set")
                     self.candidate_set.add(summary)
                 else:
                     logging.info("Discarding CloseEncounter transaction inconsistent with ledger")
