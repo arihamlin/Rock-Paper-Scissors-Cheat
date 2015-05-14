@@ -104,7 +104,7 @@ class Ledger():
 
 		# Step 2
 		# commented out because we haven't set these values yet
-		"""
+		
 		if (not winner["in_encounter_with"] or
 			not loser["in_encounter_with"] or
 			winner["in_encounter_with"] != summary.loser or
@@ -119,7 +119,7 @@ class Ledger():
 		# Step 4
 		if winner["encounter_end_by"] < winner["current_ledger"]:
 			return False
-		"""
+		
 		return True
 
 	def apply_transactions(self, txs):

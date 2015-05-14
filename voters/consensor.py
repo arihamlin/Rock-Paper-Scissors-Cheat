@@ -40,6 +40,7 @@ class Consensor:
 
             # Start with our own vote...
             our_candidate_set = set(self.candidate_set)
+            logging.info("OUR CANDIDATE SET:"+str([t.short_id() for t in our_candidate_set]))
             our_stake = self.last_closed_ledger.get_account_info(self.account.account_id)["stake"]
             total_stake += our_stake
             for tx in our_candidate_set:
@@ -81,7 +82,8 @@ class Consensor:
         else:
             # submit my vote
             self.send_voter_message({
-                "proposal": pickle.dumps(self.candidate_set)
+                "proposal": pickle.dumps(self.candidate_set),
+                "lcl_hash": self.last_closed_ledger.get_ledger_hash()
             })
             self.round_number += 1
             #logging.info("SENT VOTE")
@@ -154,7 +156,7 @@ class Consensor:
             dv = False
             if tx_type == "consensor.InitiationSummary" and self.last_closed_ledger.is_valid_initiation_summary(tx):
                 dv = True
-            elif tx_type == "consensor.EncounterSummary" and self.is_valid_encounter_summary(tx):
+            elif tx_type == "consensor.EncounterSummary" and self.last_closed_ledger.is_valid_encounter_summary(tx):
                 dv = True
             elif tx_type == "consensor.CoinstakeSummary" and (False):
                 dv = True
@@ -240,7 +242,11 @@ class Consensor:
             their_proposal = pickle.loads(msg["proposal"])
             #logging.info("RECEIVED VOTE")
             # At this point we should check to make sure that the signature on the message is genuine.
-            self.votes_heard[sender_account_id] = their_proposal
+            # Also, check to see that they're talking about the same ledger as we are.
+            if self.last_closed_ledger.get_ledger_hash() == msg["lcl_hash"]:
+                self.votes_heard[sender_account_id] = their_proposal
+            else:
+                logging.info("Ignoring vote for non-current ledger "+msg["lcl_hash"])
         elif "secondhand" in msg:
             shtx = SignedStructure.deserialize(msg["secondhand"])
             self.consider_transaction(shtx)
