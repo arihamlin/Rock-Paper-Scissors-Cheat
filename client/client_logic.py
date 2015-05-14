@@ -39,6 +39,8 @@ class Player(tornado.tcpserver.TCPServer):
     @tornado.gen.coroutine
     def start_encounter(self, defender_ip, defender_port, defender_id):
         """
+        Challenges a defender by initiating a connection.
+
         Arguments:
         player_ip - IP address of the player
         player_port - Port of the other player
