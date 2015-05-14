@@ -53,7 +53,7 @@ $ python voters/relay.py 10000 10001
 ```
 
 ```
-# start three voters (with account seed 1, 888, and 999 respectively)
+# start three voters simoutaneously (with account seed 1, 888, and 999 respectively)
 $ . ./venv/bin/activate
 $ echo -en "1\n888\n999" | xargs -L1 -P 3 python voters/voter.py 127.0.0.1 10000
 ```

@@ -4,6 +4,11 @@ import os
 import tornado
 from common.helpers import get_account_from_seed
 
+"""
+Example challenger listens on port 4242 and uses account seed 3.
+It connects to example defender which listens on port 4243. 
+"""
+
 account = get_account_from_seed(3)
 print account
 
