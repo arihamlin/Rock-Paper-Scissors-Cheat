@@ -62,12 +62,18 @@ class Ledger():
 
 	# Is a given InitiateEncounter summary valid, with respect to this ledger?
 	def is_valid_initiation_summary(self, summary):
-		# If they can afford the transaction fees, they're not already in encounters, and it's not too early or late.
+		# If they can afford the transaction fees,
+		# they're not already in encounters,
+		# and it's not too early or late.
+		# However, even if one or both players ARE in encounters,
+		# they can start a new encounter regardless as long as both "end_by" dates have expired.
+
 		challenger = self.get_account_info(summary.challenger)
 		defender = self.get_account_info(summary.defender)
 		if challenger["stake"] < TRANSACTION_FEE or defender["stake"] < TRANSACTION_FEE:
 			return False
-		if challenger["in_encounter_with"] or defender["in_encounter_with"]:
+		if ((challenger["in_encounter_with"] and challenger["encounter_end_by"]>challenger["current_ledger"]) or 
+			(defender["in_encounter_with"]) and defender["encounter_end_by"]>defender["current_ledger"]):
 			return False
 		if challenger["current_ledger"] > summary.encounter_begin_by:
 			return False
