@@ -11,6 +11,7 @@ import random
 import time 
 import sys
 import threading
+import time
 import tornado.httpclient
 from enum import IntEnum
 import common.base as b
@@ -276,12 +277,18 @@ class PlayerConnRequestHandler(object):
         assert transaction.payload.name =="CommitTransaction"
         self.moves.append(transaction)
         
-        #check to see if defender has posted to voters yet    
-        account_state = yield self._get_account_state()
-        if account_state.payload['in_encounter_with'] != transaction.account.account_id:
-            print("Encounter hasn't started yet")
-            #TODO: loop here until it is posted
-        
+        #check to see if defender has posted to voters yet   
+        account_state = None
+        while account_state is None:
+            account_state = yield self._get_account_state()            
+            if account_state.payload['in_encounter_with'] != transaction.account.account_id:
+                print("Waiting for voter confirmation...")
+            else:
+                break
+            account_state = None
+            yield tornado.gen.Task(tornado.ioloop.IOLoop.instance().add_timeout,
+                time.time() + 5)
+
         #get player turn and get the commitment
         commit_transaction = self._commit_turn(transaction.signature)
         self.moves.append(transaction)
