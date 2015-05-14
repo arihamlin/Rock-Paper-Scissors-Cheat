@@ -4,6 +4,11 @@ import random
 import Crypto.PublicKey.RSA as RSA
 
 
+"""
+Use random.seed() to deterministically generate public/private
+key-pairs (accounts). 
+"""
+
 def get_account_from_seed(seed):
 	restore = random.getstate()
 	random.seed(seed)
