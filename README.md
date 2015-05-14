@@ -53,7 +53,7 @@ $ python voters/relay.py 10000 10001
 ```
 
 ```
-# Start three voters simoutaneously (with account seed 1, 888, and 999 respectively).
+# Start three voters simultaneously (with account seed 1, 888, and 999 respectively).
 # To run the voters in sync, we use 'xargs' to run them at once
 $ . ./venv/bin/activate
 $ echo -en "1\n888\n999" | xargs -L1 -P 3 python voters/voter.py 127.0.0.1 10000
@@ -69,4 +69,9 @@ $ python defender.py
 # start a challenger 
 $ . ./venv/bin/activate
 $ python challenger.py
+```
+
+Use the following command to check that all three voters' ledgers are exactly the same:
+```
+shasum -a 256 ledger_YjMyMW.db; shasum -a 256 ledger_ZDRlNj.db; shasum -a 256 ledger_MzA3MD.db
 ```
