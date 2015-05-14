@@ -3,6 +3,7 @@ import tornado.log
 import pickle
 import ledger
 import logging
+from common.base import *
 from verify import verify_encounter, verify_initiation
 
 ROUND_TIME = 1000 # milliseconds
@@ -53,6 +54,7 @@ class Consensor:
                     logging.info("Voter has no stake; ignoring:"+voter)
                     continue
                 their_stake = them["stake"]
+                total_stake += their_stake
                 for tx in their_candidate_set:
                     transaction_map[tx.id] = tx
                     if tx.id in tally: tally[tx.id] += their_stake
@@ -61,17 +63,18 @@ class Consensor:
             # See which ones passed the threshold
             absolute_threshold = int(total_stake * threshold)
             new_candidate_set = set()
-
+            logging.info("absolute_threshold:"+str(absolute_threshold))
             for txid in tally:
                 tx = transaction_map[txid]
+                logging.info(tx.short_id() + " has tally "+str(tally[txid]))
                 if tally[txid] >= absolute_threshold:
                     logging.info("Adding to candidate set tx "+tx.short_id())
                     new_candidate_set.add(tx)
                 else:
                     logging.info("Not enough votes; deferring tx "+tx.short_id())
                     self.deferral_set.add(tx)
-
-            self.candidate_set = new_candidate_set
+            self.candidate_set.clear()
+            for t in new_candidate_set: self.candidate_set.add(t)
 
         if self.round_number == NUMBER_OF_ROUNDS-1:
             self.finalize_ledger(threshold)
@@ -142,12 +145,32 @@ class Consensor:
             deferrals.add(coinstake)
         """
 
-        # This round's deferrals become the next round's candidates
-        self.candidate_set = self.deferral_set
-        self.deferral_set = set()
-        self.votes_heard = dict()
-
         self.last_closed_ledger.apply_transactions(final_proposal)
+
+        # This round's deferrals become the next round's candidates, provided that they're still valid.
+        self.candidate_set.clear()
+        for tx in self.deferral_set:
+            tx_type = str(tx.__class__)
+            dv = False
+            if tx_type == "consensor.InitiationSummary" and self.last_closed_ledger.is_valid_initiation_summary(tx):
+                dv = True
+            elif tx_type == "consensor.EncounterSummary" and self.is_valid_encounter_summary(tx):
+                dv = True
+            elif tx_type == "consensor.CoinstakeSummary" and (False):
+                dv = True
+
+            if dv:
+                logging.info("Deferral still valid for tx "+tx.short_id())
+                self.candidate_set.add(tx)
+            else:
+                logging.info("Deferral no longer valid for tx "+tx.short_id())
+                
+        self.deferral_set.clear()
+        self.votes_heard.clear()
+
+        
+
+        logging.info("DONE WITH ROUND!"+str(self.votes_heard)+"!!!!"+str(self.deferral_set)+"????"+str(self.candidate_set))
 
         self.start()
 
@@ -161,11 +184,14 @@ class Consensor:
                     id = str(transaction.signature),
                     challenger = verification[1],
                     defender = verification[2],
-                    encounter_end_by = verification[3]
+                    encounter_begin_by = verification[3],
+                    encounter_end_by = verification[4]
                 )
                 if self.last_closed_ledger.is_valid_initiation_summary(summary): #If the transaction is externally valid
                     logging.info("Adding InitiateEncounter with id=" + summary.short_id() + "... to candidate set")
-                    self.candidate_set.add(summary)
+                    if summary not in self.candidate_set:
+                        self.candidate_set.add(summary)
+                        self.relay_secondhand_transaction(transaction)
                 else:
                     logging.info("Discarding InitiateEncounter transaction inconsistent with ledger")
         elif transaction.payload.name == "CloseEncounter":
@@ -180,11 +206,19 @@ class Consensor:
                 )
                 if self.last_closed_ledger.is_valid_encounter_summary(summary): #If the transaction is externally valid
                     logging.info("Adding CloseEncounter with id=" + summary.short_id() + "... to candidate set")
-                    self.candidate_set.add(summary)
+                    if summary not in self.candidate_set:
+                        self.candidate_set.add(summary)
+                        self.relay_secondhand_transaction(transaction)
                 else:
                     logging.info("Discarding CloseEncounter transaction inconsistent with ledger")
         else:
             logging.info("Discarding transaction of unknown type")
+
+    def relay_secondhand_transaction(self, shtx):
+        logging.info("RELAYING SECONDHAND:"+str(shtx))
+        self.send_voter_message({
+            "secondhand": SignedStructure.serialize(shtx)
+        })
 
 
     """
@@ -207,12 +241,18 @@ class Consensor:
             #logging.info("RECEIVED VOTE")
             # At this point we should check to make sure that the signature on the message is genuine.
             self.votes_heard[sender_account_id] = their_proposal
+        elif "secondhand" in msg:
+            shtx = SignedStructure.deserialize(msg["secondhand"])
+            self.consider_transaction(shtx)
         else:
+            logging.info("CONSENSOR GOT VOTER_MESSAGE FROM:"+str(sender_id)+": "+str(msg))
             logging.info("Could not understand voter message; dropping")
 
 
     def start(self):
         logging.info("Starting new consensus round")
+        logging.info("STARTING ROUND!"+str(self.votes_heard)+"!!!!"+str(self.deferral_set)+"????"+str(self.candidate_set))
+
         #self.voters_seen = dict() #key=voter id, value = stake in LCL
         my_info = self.last_closed_ledger.get_account_info(self.account.account_id)
         if not my_info:
@@ -232,24 +272,33 @@ class Consensor:
 
 
 
+class Summary:
+    def __init__(self):
+        pass #Override this
+    def short_id(self):
+        return self.id[1:9] + "..."
+    def __hash__(self):
+        return self.id.__hash__()
+    def __eq__(self, other):
+        return self.id == other.id
+    def __ne__(self, other):
+        return (not self.__eq__(other))
 
-class InitiationSummary:
-    def __init__(self, id, challenger, defender, encounter_end_by): #etc
+class InitiationSummary(Summary):
+    def __init__(self, id, challenger, defender, encounter_begin_by, encounter_end_by):
         self.id = id
         self.challenger = challenger
         self.defender = defender
+        self.encounter_begin_by = encounter_begin_by
         self.encounter_end_by = encounter_end_by
-    def short_id(self):
-        return self.id[1:9] + "..."
 
-class EncounterSummary:
+
+class EncounterSummary(Summary):
     def __init__(self, id, winner, loser, was_tied):
         self.id = id
         self.winner = winner
         self.loser = loser
         self.was_tied = was_tied
-    def short_id(self):
-        return self.id[1:9] + "..."
     def __str__(self):
         return str({
             "id": self.id,
@@ -258,7 +307,7 @@ class EncounterSummary:
             "was_tied": self.was_tied
         })
 
-class CoinstakeSummary:
+class CoinstakeSummary(Summary):
     def __init__(self, id, payee, total_fees):
         self.id = id
         self.payee = payee

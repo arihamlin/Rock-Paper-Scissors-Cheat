@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import hashlib
 
 GENESIS_ACCOUNT_ID = "ZDRlNjg0ZDgyOGEyYTY5ZjY4MDYxZjhiYzZiYzFjNjJmZjlj" # This is the account with seed=1.
 TRANSACTION_FEE = 360
@@ -66,7 +67,7 @@ class Ledger():
 
 	# Is a given InitiateEncounter summary valid, with respect to this ledger?
 	def is_valid_initiation_summary(self, summary):
-		# If they can afford the transaction fees, they're not already in encounters, and it's not too late.
+		# If they can afford the transaction fees, they're not already in encounters, and it's not too early or late.
 		challenger = self.get_account_info(summary.challenger)
 		defender = self.get_account_info(summary.defender)
 
@@ -74,8 +75,11 @@ class Ledger():
 
 		if challenger["stake"] < TRANSACTION_FEE or defender["stake"] < TRANSACTION_FEE:
 			return False
-		
+
 		if challenger["in_encounter_with"] or defender["in_encounter_with"]:
+			return False
+
+		if challenger["current_ledger"] > summary.encounter_begin_by:
 			return False
 
 		if challenger["current_ledger"] > summary.encounter_end_by:
@@ -213,19 +217,23 @@ class Ledger():
 
 	def update_root_and_hash(self):
 		c = self.conn.cursor()
-		hashes = list()
+		hashes = ""
 		for entry in c.execute("SELECT * FROM ledger_main ORDER BY account_id"):
-			entry_hash = 123456 #something from entry
-			hashes.append(entry_hash)
-		merkle_root = merkle_root_from_leaves(hashes)
+			entry_hash = hashlib.sha256(str(entry)).hexdigest() #something from entry
+			hashes += entry_hash
+		merkle_root = hashlib.sha256(hashes).hexdigest()
+		# This is not actually a Merkle tree; but the ledger isn't so big that we need that.
 		ledger_number = 1+self.get_ledger_root()["ledger_number"]
 		previous_hash = self.get_ledger_hash()
 
-		ledger_hash = "deadbeef" #something
+		
 
 		c.execute("UPDATE ledger_root SET merkle_root=?, ledger_number=?, previous_hash=?",
 			(merkle_root, ledger_number, previous_hash))
-		c.execute("UPDATE ledger_hash SET ledger_hash=?", (ledger_hash,))
+
+		new_ledger_hash = hashlib.sha256(str(self.get_ledger_root())).hexdigest()
+		logging.info("Updating ledger hash: "+new_ledger_hash)
+		c.execute("UPDATE ledger_hash SET ledger_hash=?", (new_ledger_hash,))
 		self.conn.commit()
 
 		#self.conn.close()
@@ -249,19 +257,13 @@ class Ledger():
 		c = self.conn.cursor()
 		c.execute("SELECT * FROM ledger_root")
 		r = c.fetchone()
-		result = {
-			"merkle_root": "deadbeef", #something
-			"ledger_number": 1, #something
-			"previous_hash": "8badf00d" #something
-		}
-		#self.conn.close()
-		return result
+		return r
 
 	def get_ledger_hash(self):
 		c = self.conn.cursor()
 		c.execute("SELECT * FROM ledger_hash")
 		r = c.fetchone()
-		result = "defaced1" #something
+		result = r["ledger_hash"] #something
 		#self.conn.close()
 		return result
 
@@ -293,21 +295,6 @@ def initalize_database(conn):
 	conn.commit()
 	#conn.close()
 
-
-def is_power_of_two(num):
-	return num != 0 and ((num & (num - 1)) == 0)
-
-
-def merkle_root_from_leaves(leaves):
-	while not is_power_of_two(len(leaves)):
-		leaves.append(0)
-	while len(leaves) > 1:
-		next_level = list()
-		for i in xrange(len(leaves) / 2):
-			next_hash = 543321 #hash of leaves[2i] concat leaves[2i+1]
-			next_level.append(next_hash)
-		leaves = next_level
-	return leaves[0]
 
 
 import math

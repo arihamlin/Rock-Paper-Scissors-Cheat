@@ -57,14 +57,13 @@ class Voter(VoterNode):
                 "result": signed.serialize()
             })
         else:
-            if signed.payload.name == "CloseEncounter":
-                import pickle
-                f = open("encounter.p", "wb")
-                pickle.dump(req, f)
-                f.close()
+            #if signed.payload.name == "CloseEncounter":
+            #    import pickle
+            #    f = open("encounter.p", "wb")
+            #    pickle.dump(req, f)
+            #    f.close()
             logging.info("GOT REQUEST:"+signed.payload.name)
             self.consensor.consider_transaction(signed)
-            pass
 
     def on_voter_message(self, sender_id, msg):
         #logging.info("GOT MESSAGE FROM OTHER VOTER:"+str(sender_id)+":"+str(msg))

@@ -9,11 +9,12 @@ def verify_initiation(initiation):
     #<challenger=u'OTMwMmRhMzIwNTYwYmZmZmUzYzAwNzFiYjlmNGNiM2NkM2Vh', defender=u'xxxx', begin_by=2, end_by=602, challenger_sign=[123]>
     challenger = initiation.challenger
     defender = initiation.defender
+    encounter_begin_by = initiation.begin_by
     encounter_end_by = initiation.end_by
     if False: #If the signature verification fails
-        return (False, None, None, None)
+        return (False, None, None, None, None)
     else:
-        return (True, challenger, defender, encounter_end_by)
+        return (True, challenger, defender, encounter_begin_by, encounter_end_by)
 
 def verify_encounter(encounter):
     # returns (verification result, winner, loser, msg)

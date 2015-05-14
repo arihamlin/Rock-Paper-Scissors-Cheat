@@ -62,7 +62,7 @@ class Player(tornado.tcpserver.TCPServer):
         
         current_ledger = deserialized.payload.current_ledger
         
-        begin_by = current_ledger 
+        begin_by = current_ledger + 3 
         end_by = current_ledger + 600 # Approximately 10 minutes per game
         
         #create initiate encounter object 
