@@ -4,6 +4,7 @@ import pickle
 import ledger
 import logging
 from common.base import *
+import hashlib
 from verify import verify_encounter, verify_initiation
 
 ROUND_TIME = 1500 # milliseconds
@@ -102,15 +103,27 @@ class Consensor:
         #return
         final_proposal = set()
         #deferrals = set()
-
+        total_fees = 0
         for tx in self.candidate_set:
-            if True: #If it passes the threshold
-                final_proposal.add(tx)
-            else:
-                self.deferral_set.add(tx)
-
+            final_proposal.add(tx)
+            if str(tx.__class__) != "consensor.CoinstakeSummary":
+                total_fees += TRANSACTION_FEE #Don't include Coinstakes
+        
         # For each voter that we saw, defer a Coinstake transaction
         # so that they get their share of the transaction fees.
+        if total_fees:
+            self.votes_heard[self.account.account_id] = True
+            for payee in self.votes_heard:
+                css = CoinstakeSummary(
+                    id = hashlib.sha256(payee + "" + self.last_closed_ledger.get_ledger_hash()).hexdigest(),
+                    payee = payee,
+                    total_fees = total_fees,
+                    for_voting_on_changes_to_ledger_number = self.last_closed_ledger.get_ledger_root()["ledger_number"]
+                )
+                self.deferral_set.add(css)
+
+
+
 
         """
         rewardable_voters = list()
@@ -158,14 +171,14 @@ class Consensor:
                 dv = True
             elif tx_type == "consensor.EncounterSummary" and self.last_closed_ledger.is_valid_encounter_summary(tx):
                 dv = True
-            elif tx_type == "consensor.CoinstakeSummary" and (False):
+            elif tx_type == "consensor.CoinstakeSummary" and self.last_closed_ledger.is_valid_coinstake_summary(tx):
                 dv = True
 
             if dv:
-                logging.info("Deferral still valid for tx "+tx.short_id())
+                logging.info("Deferral still valid for "+tx_type+" "+tx.short_id())
                 self.candidate_set.add(tx)
             else:
-                logging.info("Deferral no longer valid for tx "+tx.short_id())
+                logging.info("Deferral no longer valid for "+tx_type+" "+tx.short_id())
                 
         self.deferral_set.clear()
         self.votes_heard.clear()
@@ -313,10 +326,11 @@ class EncounterSummary(Summary):
         })
 
 class CoinstakeSummary(Summary):
-    def __init__(self, id, payee, total_fees):
+    def __init__(self, id, payee, total_fees, for_voting_on_changes_to_ledger_number):
         self.id = id
         self.payee = payee
         self.total_fees = total_fees
+        self.for_voting_on_changes_to_ledger_number = for_voting_on_changes_to_ledger_number
 
 
 

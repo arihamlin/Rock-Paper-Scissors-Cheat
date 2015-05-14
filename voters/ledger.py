@@ -122,7 +122,13 @@ class Ledger():
 		
 		return True
 
+	def is_valid_coinstake_summary(self, css):
+		# These transactions should be dropped
+		# if they're not approved in the very next ledger
+		return self.get_ledger_root()["ledger_number"] == 1 + css.for_voting_on_changes_to_ledger_number
+
 	def apply_transactions(self, txs):
+		coinstakes = set()
 		for tx in txs:
 			tx_type = str(tx.__class__)
 			logging.info("Applying "+tx_type+" transaction to the ledger...")
@@ -133,10 +139,14 @@ class Ledger():
 				if self.is_valid_encounter_summary(tx):
 					self.close_encounter(tx) # Modifies the ledger
 			elif tx_type == "consensor.CoinstakeSummary":
-				pass
-				#figure out how much each is owed
+				if self.is_valid_coinstake_summary(tx):
+					coinstakes.add(tx)					
 			else:
 				logging.info("Could not apply: unknown transaction type")
+
+
+		for cs in coinstakes:
+			pass
 
 		#update the ledger root and ledger hash
 		#ledger_number = self.get_ledger_root()["ledger_number"]
