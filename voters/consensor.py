@@ -6,7 +6,7 @@ import logging
 from common.base import *
 from verify import verify_encounter, verify_initiation
 
-ROUND_TIME = 1000 # milliseconds
+ROUND_TIME = 1500 # milliseconds
 VOTING_THRESHOLDS = [0, 0, 0.5, 0.6, 0.7, 0.8]
 FINAL_THRESHOLD = 0.8
 NUMBER_OF_ROUNDS = len(VOTING_THRESHOLDS)
@@ -40,7 +40,7 @@ class Consensor:
 
             # Start with our own vote...
             our_candidate_set = set(self.candidate_set)
-            logging.info("OUR CANDIDATE SET:"+str([t.short_id() for t in our_candidate_set]))
+            #logging.info("OUR CANDIDATE SET:"+str([t.short_id() for t in our_candidate_set]))
             our_stake = self.last_closed_ledger.get_account_info(self.account.account_id)["stake"]
             total_stake += our_stake
             for tx in our_candidate_set:
@@ -64,10 +64,10 @@ class Consensor:
             # See which ones passed the threshold
             absolute_threshold = int(total_stake * threshold)
             new_candidate_set = set()
-            logging.info("absolute_threshold:"+str(absolute_threshold))
+            #logging.info("absolute_threshold:"+str(absolute_threshold))
             for txid in tally:
                 tx = transaction_map[txid]
-                logging.info(tx.short_id() + " has tally "+str(tally[txid]))
+                #logging.info(tx.short_id() + " has tally "+str(tally[txid]))
                 if tally[txid] >= absolute_threshold:
                     logging.info("Adding to candidate set tx "+tx.short_id())
                     new_candidate_set.add(tx)
@@ -172,8 +172,7 @@ class Consensor:
 
         
 
-        logging.info("DONE WITH ROUND!"+str(self.votes_heard)+"!!!!"+str(self.deferral_set)+"????"+str(self.candidate_set))
-
+        logging.info("Done with consensus round")
         self.start()
 
     # Add transaction to the candidate set, and record my own vote on it (if it's not already in the candidate set)
@@ -190,7 +189,7 @@ class Consensor:
                     encounter_end_by = verification[4]
                 )
                 if self.last_closed_ledger.is_valid_initiation_summary(summary): #If the transaction is externally valid
-                    logging.info("Adding InitiateEncounter with id=" + summary.short_id() + "... to candidate set")
+                    logging.info("Adding InitiateEncounter with id=" + summary.short_id() + " to candidate set")
                     if summary not in self.candidate_set:
                         self.candidate_set.add(summary)
                         self.relay_secondhand_transaction(transaction)
@@ -207,7 +206,7 @@ class Consensor:
                     was_tied = (verification[3] == "It was a tie!")
                 )
                 if self.last_closed_ledger.is_valid_encounter_summary(summary): #If the transaction is externally valid
-                    logging.info("Adding CloseEncounter with id=" + summary.short_id() + "... to candidate set")
+                    logging.info("Adding CloseEncounter with id=" + summary.short_id() + " to candidate set")
                     if summary not in self.candidate_set:
                         self.candidate_set.add(summary)
                         self.relay_secondhand_transaction(transaction)
@@ -217,7 +216,7 @@ class Consensor:
             logging.info("Discarding transaction of unknown type")
 
     def relay_secondhand_transaction(self, shtx):
-        logging.info("RELAYING SECONDHAND:"+str(shtx))
+        logging.info("Relaying secondhand")
         self.send_voter_message({
             "secondhand": SignedStructure.serialize(shtx)
         })
@@ -246,18 +245,18 @@ class Consensor:
             if self.last_closed_ledger.get_ledger_hash() == msg["lcl_hash"]:
                 self.votes_heard[sender_account_id] = their_proposal
             else:
-                logging.info("Ignoring vote for non-current ledger "+msg["lcl_hash"])
+                logging.info("Ignoring vote for non-current ledger "+msg["lcl_hash"][0:9]+"...")
         elif "secondhand" in msg:
             shtx = SignedStructure.deserialize(msg["secondhand"])
             self.consider_transaction(shtx)
         else:
-            logging.info("CONSENSOR GOT VOTER_MESSAGE FROM:"+str(sender_id)+": "+str(msg))
-            logging.info("Could not understand voter message; dropping")
+            #logging.info("CONSENSOR GOT VOTER_MESSAGE FROM:"+str(sender_id)+": "+str(msg))
+            logging.info("Could not understand voter message; dropping: "+str(msg))
 
 
     def start(self):
         logging.info("Starting new consensus round")
-        logging.info("STARTING ROUND!"+str(self.votes_heard)+"!!!!"+str(self.deferral_set)+"????"+str(self.candidate_set))
+        #logging.info("STARTING ROUND!"+str(self.votes_heard)+"!!!!"+str(self.deferral_set)+"????"+str(self.candidate_set))
 
         #self.voters_seen = dict() #key=voter id, value = stake in LCL
         my_info = self.last_closed_ledger.get_account_info(self.account.account_id)

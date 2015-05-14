@@ -47,7 +47,7 @@ class Voter(VoterNode):
         if signed.payload.name == "QueryState":
             # FIXME: use DB to return result
             query_account_id = signed.payload.account_id
-            logging.info(query_account_id)
+            #logging.info(query_account_id)
             info = self.consensor.last_closed_ledger.get_account_info(query_account_id)
 
             state = AccountState(**info)
@@ -62,7 +62,7 @@ class Voter(VoterNode):
             #    f = open("encounter.p", "wb")
             #    pickle.dump(req, f)
             #    f.close()
-            logging.info("GOT REQUEST:"+signed.payload.name)
+            #logging.info("GOT REQUEST:"+signed.payload.name)
             self.consensor.consider_transaction(signed)
 
     def on_voter_message(self, sender_id, msg):

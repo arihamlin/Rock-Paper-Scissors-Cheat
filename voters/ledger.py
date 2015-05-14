@@ -232,7 +232,7 @@ class Ledger():
 			(merkle_root, ledger_number, previous_hash))
 
 		new_ledger_hash = hashlib.sha256(str(self.get_ledger_root())).hexdigest()
-		logging.info("Updating ledger hash: "+new_ledger_hash)
+		logging.info("Updating ledger hash: "+new_ledger_hash[0:9]+"...")
 		c.execute("UPDATE ledger_hash SET ledger_hash=?", (new_ledger_hash,))
 		self.conn.commit()
 
