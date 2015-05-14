@@ -1,5 +1,9 @@
 import sqlite3
-GENESIS_ACCOUNT_ID = "ZDRlNjg0ZDgyOGEyYTY5ZjY4MDYxZjhiYzZiYzFjNjJmZjlj"
+import logging
+
+GENESIS_ACCOUNT_ID = "ZDRlNjg0ZDgyOGEyYTY5ZjY4MDYxZjhiYzZiYzFjNjJmZjlj" # This is the account with seed=1.
+TRANSACTION_FEE = 360
+
 
 def dict_factory(cursor, row):
 	d = {}
@@ -60,15 +64,103 @@ class Ledger():
 		#self.conn.close()
 		self.update_root_and_hash()
 
+	# Is a given InitiateEncounter summary valid, with respect to this ledger?
+	def is_valid_initiation_summary(self, summary):
+		# If they can afford the transaction fees, they're not already in encounters, and it's not too late.
+		return True
+
+	# Is a given encounter summary valid?
+	def is_valid_encounter_summary(self, summary):
+		# Verify:
+		# 1. that both players can afford the transaction fee
+		# 2. that they're currently in an encounter with each other
+		# 3. that it's not too early
+		# 4. that it's not too late
+
+		winner = self.get_account_info(summary.winner)
+		loser = self.get_account_info(summary.loser)
+
+		# Step 1
+		if winner["stake"] < TRANSACTION_FEE or loser["stake"] < TRANSACTION_FEE:
+			return False
+
+		# Step 2
+		# commented out because we haven't set these values yet
+		"""
+		if (not winner["in_encounter_with"] or
+			not loser["in_encounter_with"] or
+			winner["in_encounter_with"] != summary.loser or
+			loser["in_encounter_with"] != summary.winner
+		):
+			return False
+
+		# Step 3
+		if winner["encounter_begin_at"] > winner["current_ledger"]:
+			return False
+
+		# Step 4
+		if winner["encounter_end_by"] < winner["current_ledger"]:
+			return False
+		"""
+		return True
 
 	def apply_transactions(self, txs):
 		pass
 		for tx in txs:
+			tx_type = str(tx.__class__)
+			logging.info("Applying "+tx_type+" transaction to the ledger...")
 			pass #do stuff
+			if tx_type == "consensor.InitiationSummary":
+				if self.is_valid_initiation_summary(tx):
+					self.initiate_encounter(tx) # Modifies the ledger
+			elif tx_type == "consensor.EncounterSummary":
+				if self.is_valid_encounter_summary(tx):
+					self.close_encounter(tx) # Modifies the ledger
+			elif tx_type == "consensor.CoinstakeSummary":
+				pass
+				#figure out how much each is owed
+			else:
+				logging.info("Could not apply: unknown transaction type")
+
 		#update the ledger root and ledger hash
 		#ledger_number = self.get_ledger_root()["ledger_number"]
 		self.update_root_and_hash()
 		#self.save()
+
+	def close_encounter(self, summary):
+		winner = self.get_account_info(summary.winner)
+		loser = self.get_account_info(summary.loser)
+
+		if summary.was_tied:
+			(new_winner_skill, new_loser_skill) = (winner["skill"], loser["skill"])
+		else:
+			(new_winner_skill, new_loser_skill) = skill_change(winner["skill"], loser["skill"])
+		
+		c = self.conn.cursor()
+		c.execute('''UPDATE ledger_main SET
+			skill=?,
+			stake=?,
+			in_encounter_with=NULL,
+			encounter_begin_at=NULL,
+			encounter_end_by=NULL,
+			partial_chain_length=NULL
+			WHERE account_id=?''',
+			(new_winner_skill, winner["stake"]-TRANSACTION_FEE, winner["account_id"])
+		)
+		c.execute('''UPDATE ledger_main SET
+			skill=?,
+			stake=?,
+			in_encounter_with=NULL,
+			encounter_begin_at=NULL,
+			encounter_end_by=NULL,
+			partial_chain_length=NULL
+			WHERE account_id=?''',
+			(new_loser_skill, loser["stake"]-TRANSACTION_FEE, loser["account_id"])
+		)
+		self.conn.commit()
+		logging.info("Applied transaction "+summary.short_id()+" to the ledger.")
+
+
 
 	def update_root_and_hash(self):
 		c = self.conn.cursor()
@@ -176,10 +268,10 @@ d = 1/( 1 + exp(W-L) )
 W' = W + d
 L' = L - d
 """
-def skill_change(winner, loser):
+def skill_change(winner_skill, loser_skill):
 	k = 1000
-	w = float(winner) / k
-	l = float(loser) / k
+	w = float(winner_skill) / k
+	l = float(loser_skill) / k
 	d = 1 / (1 + math.exp(w-l))
 	w_ = w + d
 	l_ = l - d

@@ -2,46 +2,82 @@ import tornado.ioloop
 import tornado.log
 import ledger
 import logging
+from verify import verify_encounter
 
 ROUND_TIME = 1000 # milliseconds
-VOTING_THRESHOLDS = [0.5, 0.6, 0.7]
+VOTING_THRESHOLDS = [0, 0, 0.5, 0.6, 0.7, 0.8]
 FINAL_THRESHOLD = 0.8
 NUMBER_OF_ROUNDS = len(VOTING_THRESHOLDS)
-TRANSACTION_FEE = 360
+TRANSACTION_FEE = ledger.TRANSACTION_FEE
 
 tornado.log.enable_pretty_logging()
+
+class InitiationSummary:
+    def __init__(self, id, challenger, defender): #etc
+        pass
+
+class EncounterSummary:
+    def __init__(self, id, winner, loser, was_tied):
+        self.id = id
+        self.winner = winner
+        self.loser = loser
+        self.was_tied = was_tied
+    def short_id(self):
+        return self.id[1:9] + "..."
+    def __str__(self):
+        return str({
+            "id": self.id,
+            "winner": self.winner,
+            "loser": self.loser,
+            "was_tied": self.was_tied
+        })
+
+class CoinstakeSummary:
+    def __init__(self, id, payee, total_fees):
+        self.id = id
+        self.payee = payee
+        self.total_fees = total_fees
 
 
 class Consensor:
     def __init__(self, account):
-        self.account = account
+        self.account = account # Our own account in the ledger
+        self.last_closed_ledger = ledger.Ledger("ledger.db") # Initialize from database on disk
+        self.candidate_set = set() # Transactions that we're voting for
+        self.deferral_set = set() # Transactions that didn't get enough votes, but will be considered for the next ledger
+        self.round_number = 0 # Which stage we're in in the consensus process
         self.timer = None
-        self.last_closed_ledger = ledger.Ledger("ledger.db") #initialize from database
-        self.candidate_set = dict() #key=transaction, value=set of votes
-
 
     # Tally up the votes, submit my proposal, and advance the round number
     def advance_round(self):
-        logging.info("Advancing!")
-        threshold = VOTING_THRESHOLDS[min(NUMBER_OF_ROUNDS, self.round_number)]
-        pass
-        if False: #If every tx passes FINAL_THRESHOLD
-            self.finalize_ledger()
+        threshold = VOTING_THRESHOLDS[self.round_number]
+        if threshold == 0:
+            logging.info("Listening for transactions...")
         else:
-            #See which transactions pass "threshold"
-            #submit a proposal for that
-            pass
+            logging.info("Advancing txs with >" + str(threshold) + " votes")
+            # update candidate_set; defer txs with insufficient votes
+        if self.round_number == NUMBER_OF_ROUNDS-1:
+            self.finalize_ledger(threshold)
+        else:
+            # submit my votes
+            self.round_number += 1
 
-    def finalize_ledger(self):
+
+    def finalize_ledger(self, threshold):
+        #return
         final_proposal = set()
-        deferrals = set()
+        #deferrals = set()
 
         for tx in self.candidate_set:
             if True: #If it passes the threshold
                 final_proposal.add(tx)
             else:
-                deferrals.add(tx)
+                self.deferral_set.add(tx)
 
+        # For each voter that we saw, defer a Coinstake transaction
+        # so that they get their share of the transaction fees.
+
+        """
         rewardable_voters = list()
         rewardable_stake = 0
         for voter in self.voters_seen:
@@ -74,18 +110,39 @@ class Consensor:
         for rv in rewardable_voters:
             coinstake = None #A tx to give rv["voter_id"] rv["integer_reward"]
             deferrals.add(coinstake)
+        """
 
-        self.candidate_set = deferrals
+        # This round's deferrals become the next round's candidates
+        self.candidate_set = self.deferral_set
+        self.deferral_set = set()
+
         self.last_closed_ledger.apply_transactions(final_proposal)
 
         self.start()
 
     # Add transaction to the candidate set, and record my own vote on it (if it's not already in the candidate set)
-    def receive_transaction(self, transaction):
-        if transaction not in self.candidate_set:
-            self.candidate_set[transaction] = set()
-            if self.would_be_valid(transaction):
-                self.candidate_set[transaction].add(self.account.account_id)
+    def consider_transaction(self, transaction):
+        logging.info("Received transaction of type: "+transaction.payload.name)
+        if transaction.payload.name == "PostInitiateEncounter":
+            pass #initiate the encounter
+        elif transaction.payload.name == "CloseEncounter":
+            verification = verify_encounter(transaction.payload)
+            #logging.info("Verification: "+str(verification))
+            if verification[0]: #If the transaction is internally valid
+                summary = EncounterSummary(
+                    id = str(transaction.signature),
+                    winner = verification[1],
+                    loser = verification[2],
+                    was_tied = (verification[3] == "It was a tie!")
+                )
+                if self.last_closed_ledger.is_valid_encounter_summary(summary): #If the transaction is externally valid
+                    logging.info("Adding transaction with id=" + summary.short_id() + "... to candidate set")
+                    self.candidate_set.add(summary)
+                else:
+                    logging.info("Discarding CloseEncounter transaction inconsistent with ledger")
+        else:
+            logging.info("Discarding transaction of unknown type")
+
 
     # Update the vote tally based on an incoming proposal
     def receive_proposal(self, proposal):
@@ -97,7 +154,7 @@ class Consensor:
         return True
 
     def start(self):
-        logging.info("Starting!")
+        logging.info("Starting new consensus round")
         self.voters_seen = dict() #key=voter id, value = stake in LCL
         my_info = self.last_closed_ledger.get_account_info(self.account.account_id)
         if not my_info:

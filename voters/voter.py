@@ -57,6 +57,7 @@ class Voter(VoterNode):
                 pickle.dump(req, f)
                 f.close()
             logging.info("GOT REQUEST:"+signed.payload.name)
+            self.consensor.consider_transaction(signed)
             pass
 
     def on_voter_message(self, sender_id, msg):

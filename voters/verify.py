@@ -4,7 +4,7 @@ from common.base import SignedStructure, Commitment
 import base64
 
 def verify_encounter(encounter):
-    # returns (verification result, winner, msg)
+    # returns (verification result, winner, loser, msg)
     challenger, defender = encounter.challenger, encounter.defender
 
     move_types = ['CommitTransaction', 'CommitTransaction',
@@ -26,20 +26,20 @@ def verify_encounter(encounter):
         if idx % 2 == 0:  # from defender
             if not move.verifySignature(defender):
                 msg = "Move #%i not signed by defender." % idx
-                return (False, None, msg)
+                return (False, None, None, msg)
         else:
             if not move.verifySignature(challenger):
                 msg = "Move #%i not signed by challenger." % idx
-                return (False, None, msg)
+                return (False, None, None, msg)
 
         if idx > 1:
             if signed_moves[idx - 1].signature != move.payload.prev:
                 msg = "Move #%i does not have correct previous signature." % idx
-                return (False, None, msg)
+                return (False, None, None, msg)
 
         if move.payload.name != move_types[idx]:
             msg = "Move #%i should be %s." % (idx, move_types[idx])
-            return (False, None, msg)
+            return (False, None, None, msg)
 
     round_idx = 0
     def compute_round_result(round_idx):
@@ -51,12 +51,12 @@ def verify_encounter(encounter):
         if not defender_commitment.verifyCommitment(base64.b64decode(defender_reveal.secret),
             defender_reveal.value):
             msg = "Defender's commitment verification failed."
-            return (False, None, msg)
+            return (False, None, None, msg)
 
         if not challenger_commitment.verifyCommitment(base64.b64decode(challenger_reveal.secret),
             challenger_reveal.value):
             msg = "Challenger's commitment verification failed."
-            return (False, None, msg)
+            return (False, None, None, msg)
 
         defender_move = defender_reveal.value
         challenger_move = challenger_reveal.value
@@ -86,13 +86,13 @@ def verify_encounter(encounter):
     result = (r1[0] + r2[0] + r3[0], r1[1] + r2[1] + r3[1])
 
     if result[0] == result[1]:
-        return (True, None, "tie")
+        return (True, challenger, defender, "It was a tie!")
 
     if result[0] > result[1]:
-        return (True, defender, "defender wins.")
+        return (True, defender, challenger, "Defender wins!")
 
     if result[0] < result[1]:
-        return (True, challenger, "challenger wins.")
+        return (True, challenger, defender, "Challenger wins!")
 
 
 if __name__ == "__main__":
